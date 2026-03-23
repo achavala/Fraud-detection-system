@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Audit Trail — Fraud Detection Platform{% endblock %}
+
+{% block content %}
+<div class="page-title">Audit Trail</div>
+<div class="page-subtitle">Immutable event log — all platform actions and state changes</div>
+
+<div class="card" style="margin-bottom: 24px;">
+    <form method="get" action="/ui/audit">
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Entity Type</label>
+                <select name="entity_type" class="form-select">
+                    <option value="">All Types</option>
+                    {% for t in ['transaction', 'case', 'model', 'rule', 'label', 'decision', 'feature', 'graph'] %}
+                    <option value="{{ t }}" {{ 'selected' if filters.entity_type == t else '' }}>{{ t|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Entity ID</label>
+                <input type="text" name="entity_id" class="form-input" placeholder="e.g. 12345"
+                       value="{{ filters.entity_id|default('', true) }}">
+            </div>
+            <div class="form-group" style="display: flex; align-items: flex-end;">
+                <button type="submit" class="btn btn-primary">Filter</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Events — {{ events|length }} shown</div>
+    </div>
+    {% if events %}
+    <div class="table-wrap" style="border: none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Event ID</th>
+                    <th>Entity Type</th>
+                    <th>Entity ID</th>
+                    <th>Event Type</th>
+                    <th>Payload</th>
+                    <th>Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in events %}
+                <tr>
+                    <td style="font-weight: 600;">{{ e.audit_event_id|default(e.event_id|default('—')) }}</td>
+                    <td>
+                        <span class="badge badge-blue">{{ e.entity_type|default('—') }}</span>
+                    </td>
+                    <td>{{ e.entity_id|default('—') }}</td>
+                    <td>{{ e.event_type|default('—') }}</td>
+                    <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        {% if e.payload_json %}
+                        <span style="font-family: monospace; font-size: 0.75rem; color: var(--text-muted);">
+                            {{ e.payload_json|string|truncate(80) }}
+                        </span>
+                        {% else %}
+                        <span style="color: var(--text-muted);">—</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ e.created_at|default('—') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">&#128220;</div>
+        <div class="empty-state-text">No audit events found</div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import ClassVar, Optional, Any
 from datetime import datetime
 
 
 class CaseStatus(BaseModel):
-    OPEN = "open"
-    IN_PROGRESS = "in_progress"
-    ESCALATED = "escalated"
-    RESOLVED_FRAUD = "resolved_fraud"
-    RESOLVED_NOT_FRAUD = "resolved_not_fraud"
-    CLOSED = "closed"
+    OPEN: ClassVar[str] = "open"
+    IN_PROGRESS: ClassVar[str] = "in_progress"
+    ESCALATED: ClassVar[str] = "escalated"
+    RESOLVED_FRAUD: ClassVar[str] = "resolved_fraud"
+    RESOLVED_NOT_FRAUD: ClassVar[str] = "resolved_not_fraud"
+    CLOSED: ClassVar[str] = "closed"
 
 
 class FraudCaseCreate(BaseModel):

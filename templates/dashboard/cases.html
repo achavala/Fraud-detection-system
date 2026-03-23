@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Cases — Fraud Detection Platform{% endblock %}
+
+{% block content %}
+<div class="page-title">Case Queue</div>
+<div class="page-subtitle">Fraud investigation cases across all queues</div>
+
+<!-- Queue Summary Cards -->
+<div class="kpi-grid">
+    {% if queue_summary %}
+    {% for q in queue_summary %}
+    <div class="kpi-card">
+        <div class="kpi-label">{{ q.queue_name|default('Unknown Queue') }}</div>
+        <div class="kpi-value">{{ q.total|default(0) }}</div>
+        <div class="kpi-sub">
+            <span style="color: var(--orange);">{{ q.open|default(0) }} open</span> &middot;
+            <span style="color: var(--accent);">{{ q.in_progress|default(0) }} in progress</span> &middot;
+            <span style="color: var(--green);">{{ q.closed|default(0) }} closed</span>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="kpi-card">
+        <div class="kpi-label">All Queues</div>
+        <div class="kpi-value">0</div>
+        <div class="kpi-sub">No cases in queue</div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Filters -->
+<div class="card" style="margin-bottom: 24px;">
+    <form method="get" action="/ui/cases">
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Queue</label>
+                <select name="queue_name" class="form-select">
+                    <option value="">All Queues</option>
+                    {% for q in queue_summary %}
+                    <option value="{{ q.queue_name }}" {{ 'selected' if filters.queue_name == q.queue_name else '' }}>{{ q.queue_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    {% for s in ['open', 'in_progress', 'closed'] %}
+                    <option value="{{ s }}" {{ 'selected' if filters.status == s else '' }}>{{ s|replace('_', ' ')|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="display: flex; align-items: flex-end;">
+                <button type="submit" class="btn btn-primary">Filter</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Cases Table -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Cases — {{ cases.count|default(0) }} results</div>
+    </div>
+    {% if cases.cases %}
+    <div class="table-wrap" style="border: none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Case ID</th>
+                    <th>Auth Event</th>
+                    <th>Status</th>
+                    <th>Queue</th>
+                    <th>Priority</th>
+                    <th>Assigned To</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in cases.cases %}
+                <tr class="clickable-row" onclick="window.location='/ui/transaction/{{ c.auth_event_id }}'">
+                    <td style="font-weight: 600;">#{{ c.case_id }}</td>
+                    <td style="color: var(--accent);">#{{ c.auth_event_id }}</td>
+                    <td>
+                        {% set cs = c.case_status|default('open') %}
+                        <span class="badge {{ 'badge-orange' if cs == 'open' else 'badge-blue' if cs == 'in_progress' else 'badge-green' if cs == 'closed' else 'badge-gray' }}">
+                            {{ cs|replace('_', ' ') }}
+                        </span>
+                    </td>
+                    <td>{{ c.queue_name|default('—') }}</td>
+                    <td>
+                        {% set pr = c.priority|default('medium') %}
+                        <span class="badge {{ 'badge-red' if pr == 'critical' else 'badge-orange' if pr == 'high' else 'badge-yellow' if pr == 'medium' else 'badge-gray' }}">
+                            {{ pr }}
+                        </span>
+                    </td>
+                    <td>{{ c.assigned_to|default('Unassigned') }}</td>
+                    <td>{{ c.created_at|default('—') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">&#128269;</div>
+        <div class="empty-state-text">No cases found</div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

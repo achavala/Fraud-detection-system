@@ -17,10 +17,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
+from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.core.config import get_settings
 from src.core.database import init_db, shutdown_db
 from src.core.logging import setup_logging
-from src.api.routes import authorize, cases, features, graph, feedback, model, dashboard
+from src.api.routes import authorize, cases, features, graph, feedback, model, dashboard, ui, replay, economics, governance, observability
 
 
 @asynccontextmanager
@@ -52,14 +53,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(authorize.router)
 app.include_router(cases.router)
 app.include_router(features.router)
+app.include_router(replay.replay_router)
+app.include_router(replay.parity_router)
 app.include_router(graph.router)
 app.include_router(feedback.router)
 app.include_router(model.router)
+app.include_router(economics.router)
+app.include_router(governance.router)
+app.include_router(observability.router)
 app.include_router(dashboard.router)
+app.include_router(ui.router)
 
 
 @app.get("/health")
@@ -77,6 +85,7 @@ async def root():
         "service": "Fraud Detection Platform",
         "version": "1.0.0",
         "endpoints": {
+            "ui": "/ui/",
             "scoring": "/authorize/score",
             "cases": "/case/create, /case/review, /case/{id}/investigate",
             "features": "/features/get/{id}, /features/compute",

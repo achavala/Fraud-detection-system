@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Fraud Economics — Fraud Detection Platform{% endblock %}
+
+{% block extra_style %}
+<style>
+    .economics-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .row-highlight-green {
+        background: var(--green-bg) !important;
+        border-left: 3px solid var(--green);
+    }
+    .loss-curve-chart {
+        width: 400px;
+        height: 200px;
+        overflow: visible;
+    }
+    .chart-bar {
+        fill: var(--accent);
+        opacity: 0.85;
+    }
+    .chart-line {
+        fill: none;
+        stroke: var(--yellow);
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+    .chart-axis {
+        font-size: 10px;
+        fill: var(--text-muted);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">Fraud Economics</div>
+<div class="page-subtitle">Business decision metrics — prevented loss, false positive cost, approval rates</div>
+
+{% set ec = economics|default({}) %}
+{% set net_savings = ec.net_fraud_savings_usd|default(0)|float %}
+{% set ns = namespace(max_net=0) %}
+{% for r in threshold_data|default([]) %}
+{% if (r.net_savings|default(0)|float) > ns.max_net %}{% set ns.max_net = r.net_savings|default(0)|float %}{% endif %}
+{% endfor %}
+
+<div class="kpi-grid economics-kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-label">Net Fraud Savings</div>
+        <div class="kpi-value" style="color: {{ 'var(--green)' if net_savings >= 0 else 'var(--red)' }}">
+            ${{ "{:,.0f}".format(net_savings|round(0)|int) }}
+        </div>
+        <div class="kpi-sub">Savings minus FP cost</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Prevented Fraud $</div>
+        <div class="kpi-value">
+            <span class="badge badge-green">${{ "{:,.0f}".format((ec.prevented_fraud_usd|default(0)|float)|round(0)|int) }}</span>
+        </div>
+        <div class="kpi-sub">Declined fraud transactions</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Missed Fraud $</div>
+        <div class="kpi-value">
+            <span class="badge badge-red">${{ "{:,.0f}".format((ec.missed_fraud_usd|default(0)|float)|round(0)|int) }}</span>
+        </div>
+        <div class="kpi-sub">Approved fraud losses</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">False Positive $ Blocked</div>
+        <div class="kpi-value">${{ "{:,.0f}".format((ec.false_positive_volume_usd|default(0)|float)|round(0)|int) }}</div>
+        <div class="kpi-sub">{{ ec.false_positive_count|default(0) }} transactions</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Fraud Basis Points</div>
+        <div class="kpi-value">{{ "%.1f"|format((ec.fraud_basis_points|default(0)|float)) }} bp</div>
+        <div class="kpi-sub">Per 10k transaction $</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Approval Rate</div>
+        <div class="kpi-value">{{ "%.1f"|format((ec.approval_rate|default(0)|float) * 100) }}%</div>
+        <div class="kpi-sub">Auto-approved</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Customer Friction Rate</div>
+        <div class="kpi-value">{{ "%.1f"|format((ec.customer_friction_rate|default(0)|float) * 100) }}%</div>
+        <div class="kpi-sub">Decline + review</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Manual Review Cost</div>
+        <div class="kpi-value">${{ "{:,.0f}".format((ec.manual_review_cost_usd|default(0)|float)|round(0)|int) }}</div>
+        <div class="kpi-sub">{{ ec.manual_review_count|default(0) }} reviews</div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <div class="card-title">Decision Economics — Threshold Simulation</div>
+    </div>
+    {% if threshold_data %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Threshold</th>
+                    <th>Approval Rate</th>
+                    <th>Decline Rate</th>
+                    <th>FP Rate</th>
+                    <th>Missed Fraud Rate</th>
+                    <th>Net Savings</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in threshold_data %}
+                {% set row_net = row.net_savings|default(0)|float %}
+                {% set is_best = threshold_data and row_net > 0 and row_net == ns.max_net %}
+                <tr class="{{ 'row-highlight-green' if is_best else '' }}">
+                    <td>{{ row.threshold|default('—') }}</td>
+                    <td>{{ "%.1f"|format((row.approval_rate|default(0)|float) * 100) }}%</td>
+                    <td>{{ "%.1f"|format((row.decline_rate|default(0)|float) * 100) }}%</td>
+                    <td>{{ "%.2f"|format((row.false_positive_rate|default(0)|float) * 100) }}%</td>
+                    <td>{{ "%.2f"|format((row.missed_fraud_rate|default(0)|float) * 100) }}%</td>
+                    <td style="font-weight: 600; color: {{ 'var(--green)' if row_net >= 0 else 'var(--red)' }}">
+                        ${{ "{:,.0f}".format(row_net|round(0)|int) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">&#128202;</div>
+        <div class="empty-state-text">No threshold simulation data available</div>
+    </div>
+    {% endif %}
+</div>
+
+{% if segments %}
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <div class="card-title">Segment Breakdown</div>
+        <span class="badge badge-gray">by {{ segments[0].segment_by|default('segment') if segments else '—' }}</span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Segment</th>
+                    <th>Transactions</th>
+                    <th>Fraud $</th>
+                    <th>Prevented $</th>
+                    <th>Missed $</th>
+                    <th>FP Count</th>
+                    <th>Approval Rate</th>
+                    <th>Fraud BP</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in segments %}
+                <tr>
+                    <td>{{ s.segment_value|default('—') }}</td>
+                    <td>{{ "{:,}".format(s.total_transactions|default(0)|int) }}</td>
+                    <td>${{ "{:,.0f}".format((s.fraud_volume_usd|default(0)|float)|round(0)|int) }}</td>
+                    <td>${{ "{:,.0f}".format((s.prevented_fraud_usd|default(0)|float)|round(0)|int) }}</td>
+                    <td>${{ "{:,.0f}".format((s.missed_fraud_usd|default(0)|float)|round(0)|int) }}</td>
+                    <td>{{ s.false_positive_count|default(0)|int }}</td>
+                    <td>{{ "%.1f"|format((s.approval_rate|default(0)|float) * 100) }}%</td>
+                    <td>{{ "%.1f"|format(s.fraud_basis_points|default(0)|float) }} bp</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Loss Curve</div>
+        <span class="badge badge-blue">Cumulative fraud caught vs false positives</span>
+    </div>
+    {% if loss_curve and loss_curve.deciles %}
+    {% set deciles = loss_curve.deciles|default([]) %}
+    {% set fraud_caught = loss_curve.cumulative_fraud_caught_usd|default([]) %}
+    {% set fp_counts = loss_curve.cumulative_false_positives|default([]) %}
+    {% set lc_ns = namespace(max_fraud=1, max_fp=1) %}
+    {% for v in fraud_caught %}{% set val = v|default(0)|float %}{% if val > lc_ns.max_fraud %}{% set lc_ns.max_fraud = val %}{% endif %}{% endfor %}
+    {% for v in fp_counts %}{% set val = v|default(0)|float %}{% if val > lc_ns.max_fp %}{% set lc_ns.max_fp = val %}{% endif %}{% endfor %}
+    <div style="padding: 16px 0;">
+        <svg class="loss-curve-chart" viewBox="0 0 400 200" preserveAspectRatio="xMidYMid meet">
+            <defs>
+                <linearGradient id="barGrad" x1="0" y1="1" x2="0" y2="0">
+                    <stop offset="0%" stop-color="var(--accent)"/>
+                    <stop offset="100%" stop-color="#60a5fa"/>
+                </linearGradient>
+            </defs>
+            <!-- Y-axis label -->
+            <text x="8" y="30" class="chart-axis" transform="rotate(-90, 8, 30)">$ Fraud Caught / FP Count</text>
+            <!-- Chart area: left 45, bottom 35, right 25, top 25 -->
+            <!-- X axis ticks and labels -->
+            {% for i in range(10) %}
+            {% set x = 45 + (i + 0.5) * 33 %}
+            <text x="{{ x }}" y="195" class="chart-axis" text-anchor="middle">{{ i + 1 }}</text>
+            {% endfor %}
+            <text x="225" y="198" class="chart-axis" text-anchor="middle">Decile</text>
+            <!-- Y axis labels -->
+            <text x="35" y="165" class="chart-axis" text-anchor="end">0</text>
+            {% if lc_ns.max_fraud > 0 %}
+            <text x="35" y="45" class="chart-axis" text-anchor="end">${{ "{:,.0f}".format(lc_ns.max_fraud|round(0)|int) }}</text>
+            {% endif %}
+            <!-- Bars and line -->
+            {% for fc_val in fraud_caught %}
+            {% set h = (fc_val|default(0)|float / lc_ns.max_fraud) * 130 if lc_ns.max_fraud > 0 else 0 %}
+            {% set x = 45 + loop.index0 * 33 %}
+            {% set w = 28 %}
+            {% set y = 160 - h %}
+            <rect x="{{ x }}" y="{{ y }}" width="{{ w }}" height="{{ h }}" class="chart-bar" fill="url(#barGrad)"/>
+            {% endfor %}
+            <!-- FP line as overlay (scaled to same height) -->
+            {% if lc_ns.max_fp > 0 and fp_counts %}
+            <polyline points="{% for fp_val in fp_counts %}{{ 45 + (loop.index0 + 0.5) * 33 }},{{ 160 - ((fp_val|default(0)|float / lc_ns.max_fp) * 130) }}{{ " " if not loop.last else "" }}{% endfor %}" class="chart-line"/>
+            {% endif %}
+        </svg>
+        <div style="display: flex; gap: 20px; margin-top: 12px; font-size: 0.72rem; color: var(--text-muted);">
+            <span><span style="display: inline-block; width: 12px; height: 8px; background: var(--accent); vertical-align: middle;"></span> Cumulative Fraud Caught ($)</span>
+            <span><span style="display: inline-block; width: 12px; height: 2px; background: var(--yellow); vertical-align: middle;"></span> Cumulative False Positives</span>
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">&#128202;</div>
+        <div class="empty-state-text">No loss curve data available</div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

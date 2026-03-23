@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Overview — Fraud Detection Platform{% endblock %}
+
+{% block content %}
+<div class="page-title">Operations Overview</div>
+<div class="page-subtitle">Real-time fraud operations KPIs — last 24 hours</div>
+
+<div class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-label">Total Transactions (24h)</div>
+        <div class="kpi-value">{{ "{:,}".format(summary.total_transactions|default(0)) }}</div>
+        <div class="kpi-sub">Authorization events</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Decline Rate</div>
+        <div class="kpi-value" style="color: {{ 'var(--red)' if (summary.decline_rate|default(0)) > 0.05 else 'var(--green)' }}">
+            {{ "%.2f"|format((summary.decline_rate|default(0)) * 100) }}%
+        </div>
+        <div class="kpi-sub">{{ "{:,}".format(summary.total_declines|default(0)) }} declines</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Review Rate</div>
+        <div class="kpi-value" style="color: {{ 'var(--yellow)' if (summary.review_rate|default(0)) > 0.03 else 'var(--green)' }}">
+            {{ "%.2f"|format((summary.review_rate|default(0)) * 100) }}%
+        </div>
+        <div class="kpi-sub">{{ "{:,}".format(summary.total_reviews|default(0)) }} sent to review</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Confirmed Fraud</div>
+        <div class="kpi-value" style="color: var(--red)">
+            {{ "{:,}".format(summary.confirmed_fraud|default(0)) }}
+        </div>
+        <div class="kpi-sub">Labeled fraud in 24h</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Open Cases</div>
+        <div class="kpi-value" style="color: {{ 'var(--orange)' if (summary.open_cases|default(0)) > 20 else 'var(--accent)' }}">
+            {{ "{:,}".format(summary.open_cases|default(0)) }}
+        </div>
+        <div class="kpi-sub">Awaiting investigation</div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Recent Decisions</div>
+        </div>
+        {% if recent_decisions %}
+        <div class="table-wrap" style="border: none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Auth Event</th>
+                        <th>Amount</th>
+                        <th>Decision</th>
+                        <th>Risk Band</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in recent_decisions %}
+                    <tr class="clickable-row" onclick="window.location='/ui/transaction/{{ d.auth_event_id }}'">
+                        <td>#{{ d.auth_event_id }}</td>
+                        <td>${{ "%.2f"|format(d.billing_amount_usd|default(0)|float) }}</td>
+                        <td>
+                            {% set dt = d.decision_type|default('unknown') %}
+                            <span class="badge {{ 'badge-green' if dt == 'approve' else 'badge-red' if dt in ('decline', 'hard_decline') else 'badge-yellow' if dt == 'manual_review' else 'badge-blue' }}">
+                                {{ dt }}
+                            </span>
+                        </td>
+                        <td>
+                            {% set rb = d.risk_band|default('unknown') %}
+                            <span class="badge {{ 'badge-green' if rb == 'low' else 'badge-yellow' if rb == 'medium' else 'badge-orange' if rb == 'high' else 'badge-red' if rb == 'critical' else 'badge-gray' }}">
+                                {{ rb }}
+                            </span>
+                        </td>
+                        <td>{{ d.event_time|default(d.decision_time|default('—')) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">&#8709;</div>
+            <div class="empty-state-text">No recent decisions</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Model Health</div>
+        </div>
+        {% if models %}
+        {% for m in models %}
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border);">
+            <div>
+                <div style="font-weight: 600; font-size: 0.85rem;">{{ m.model_version }}</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted);">{{ m.family|default('—') }} &middot; {{ m.status }}</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                {% if m.auc_roc %}
+                <span style="font-size: 0.82rem; font-weight: 600;">AUC {{ "%.3f"|format(m.auc_roc|float) }}</span>
+                {% endif %}
+                <span class="badge {{ 'badge-green' if m.health == 'healthy' else 'badge-yellow' if m.health == 'degraded' else 'badge-red' }}">
+                    {{ m.health }}
+                </span>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">&#8709;</div>
+            <div class="empty-state-text">No models registered</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

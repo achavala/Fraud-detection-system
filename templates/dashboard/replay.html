@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+{% block title %}Decision Replay — Fraud Detection Platform{% endblock %}
+
+{% block extra_style %}
+<style>
+    .detail-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 900px) { .detail-panels { grid-template-columns: 1fr; } }
+    .verdict-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 24px;
+        padding: 24px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        margin-bottom: 24px;
+    }
+    .verdict-decision { font-size: 1.5rem; font-weight: 700; }
+    .verdict-correct { font-size: 1.2rem; }
+    .verdict-time { font-size: 0.9rem; color: var(--text-secondary); }
+    .feature-highlight { color: var(--orange); font-weight: 600; }
+    .threshold-bar {
+        height: 12px;
+        background: var(--bg-tertiary);
+        border-radius: 6px;
+        position: relative;
+        margin: 8px 0;
+        overflow: visible;
+    }
+    .threshold-marker {
+        position: absolute;
+        top: -4px;
+        width: 3px;
+        height: 20px;
+        background: var(--text-primary);
+        border-radius: 2px;
+    }
+    .threshold-score-line {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 4px;
+        background: var(--accent);
+        border-radius: 2px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">Decision Replay</div>
+<div class="page-subtitle">Reconstruct any authorization decision as-of transaction time</div>
+
+<div class="card" style="margin-bottom: 24px;">
+    <form method="get" action="/ui/replay">
+        <div class="form-row" style="align-items: flex-end;">
+            <div class="form-group">
+                <label class="form-label">Auth Event ID</label>
+                <input type="number" name="auth_event_id" class="form-input" placeholder="e.g. 12345"
+                       value="{{ search_id|default('', true) }}" min="1">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <button type="submit" class="btn btn-primary">Replay Decision</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+{% if replay and not replay.get('error') %}
+{% set payload = replay.transaction_payload or {} %}
+{% set features = replay.features_at_decision_time or {} %}
+{% set scores = replay.model_scores or [] %}
+{% set rules = replay.rule_firings or [] %}
+{% set thresholds = replay.decision_thresholds or {} %}
+{% set decision = replay.final_decision or {} %}
+{% set later_labels = replay.later_arriving_labels or [] %}
+{% set lifecycle = replay.lifecycle_timeline or [] %}
+{% set final_dt = decision.decision_type|default('—') %}
+{% set ttl = replay.time_to_label_seconds %}
+
+<!-- a. Decision Verdict -->
+<div class="verdict-card">
+    <div>
+        <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Final Decision</div>
+        <span class="verdict-decision badge {{ 'badge-green' if final_dt in ('approve', 'step_up') else 'badge-red' if final_dt in ('decline', 'hard_decline') else 'badge-yellow' }}" style="font-size: 1.2rem; padding: 8px 16px;">
+            {{ final_dt }}
+        </span>
+    </div>
+    <div class="verdict-correct">
+        {% if replay.decision_correct is true %}
+        <span style="color: var(--green); font-size: 1.5rem;">&#10003;</span> Correct
+        {% elif replay.decision_correct is false %}
+        <span style="color: var(--red); font-size: 1.5rem;">&#10007;</span> Incorrect
+        {% else %}
+        <span style="color: var(--text-muted); font-size: 1.5rem;">?</span> Unknown
+        {% endif %}
+    </div>
+    <div class="verdict-time">
+        {% if ttl is not none %}
+        {% set days = (ttl / 86400)|int %}
+        {% set hours = ((ttl % 86400) / 3600)|int %}
+        {% if days > 0 %}{{ days }}d {% endif %}{{ hours }}h to label
+        {% else %}
+        —
+        {% endif %}
+    </div>
+</div>
+
+<!-- b. Transaction Payload -->
+<div class="panel">
+    <div class="panel-header">Transaction Payload</div>
+    <div class="panel-body">
+        <div class="detail-grid">
+            <div class="detail-item">
+                <div class="detail-label">event_time</div>
+                <div class="detail-value">{{ payload.event_time|default('—') }}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">auth_amount</div>
+                <div class="detail-value">{{ payload.auth_amount|default('—') }}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">currency_code</div>
+                <div class="detail-value">{{ payload.currency_code|default('—') }}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">channel</div>
+                <div class="detail-value">{{ payload.channel|default('—') }}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">auth_type</div>
+                <div class="detail-value">{{ payload.auth_type|default('—') }}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">entry_mode</div>
+                <div class="detail-value">{{ payload.entry_mode|default('—') }}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">merchant_country_code</div>
+                <div class="detail-value">{{ payload.merchant_country_code|default('—') }}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">billing_amount_usd</div>
+                <div class="detail-value">{{ payload.billing_amount_usd|default('—') }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- c. Features at Decision Time -->
+<div class="panel">
+    <div class="panel-header">Features at Decision Time</div>
+    <div class="panel-body">
+        <div class="table-wrap" style="border: none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Feature Name</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for name in ['customer_txn_count_1h', 'customer_txn_count_24h', 'customer_spend_24h', 'card_txn_count_10m', 'merchant_txn_count_10m', 'merchant_chargeback_rate_30d', 'device_txn_count_1d', 'device_account_count_30d', 'ip_account_count_7d', 'ip_card_count_7d', 'geo_distance_from_home_km', 'geo_distance_from_last_txn_km', 'seconds_since_last_txn', 'amount_vs_customer_p95_ratio', 'amount_vs_merchant_p95_ratio', 'proxy_vpn_tor_flag', 'device_risk_score', 'behavioral_risk_score', 'graph_cluster_risk_score'] %}
+                    {% set val = features.get(name) %}
+                    {% set is_high = val is not none and val != '' and (val|float|default(-1) > 0.5) %}
+                    <tr>
+                        <td style="font-weight: 500;">{{ name }}</td>
+                        <td class="{{ 'feature-highlight' if is_high else '' }}">{{ val if val is not none and val != '' else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- d. Model Scores -->
+<div class="panel">
+    <div class="panel-header">Model Scores</div>
+    <div class="panel-body">
+        {% if scores %}
+        {% for s in scores %}
+        <div style="padding: 14px 0; {{ 'border-bottom: 1px solid var(--border);' if not loop.last else '' }}">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+                <span style="font-weight: 600;">{{ s.model_version|default('—') }}</span>
+                {% if s.shadow_mode %}<span class="badge badge-gray">shadow</span>{% endif %}
+                <span style="color: var(--text-secondary);">fraud_prob: {{ "%.4f"|format(s.fraud_probability|default(0)|float) }}</span>
+                {% if s.calibrated_probability is not none %}<span style="color: var(--text-secondary);">calibrated: {{ "%.4f"|format(s.calibrated_probability|float) }}</span>{% endif %}
+                {% set rb = s.risk_band|default('—') %}
+                <span class="badge {{ 'badge-green' if rb == 'low' else 'badge-yellow' if rb == 'medium' else 'badge-orange' if rb == 'high' else 'badge-red' if rb == 'critical' else 'badge-gray' }}">{{ rb }}</span>
+                {% if s.latency_ms is not none %}<span style="font-size: 0.75rem; color: var(--text-muted);">{{ s.latency_ms }}ms</span>{% endif %}
+            </div>
+            {% if s.top_reason_codes %}
+            <div style="margin-top: 8px; font-size: 0.8rem; color: var(--text-secondary);">
+                reason_codes: {% for code in s.top_reason_codes %}<span class="badge badge-gray" style="margin-right: 4px;">{{ code }}</span>{% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="empty-state"><div class="empty-state-text">No model scores</div></div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- e. Rule Firings -->
+<div class="panel">
+    <div class="panel-header">Rule Firings</div>
+    <div class="panel-body">
+        {% if rules %}
+        <div class="table-wrap" style="border: none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rule Name</th>
+                        <th>Fired</th>
+                        <th>Severity</th>
+                        <th>Score</th>
+                        <th>Explanation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rules %}
+                    <tr>
+                        <td style="font-weight: 600;">{{ r.rule_name|default(r.rule_id|default('—')) }}</td>
+                        <td>
+                            <span class="badge {{ 'badge-red' if r.fired_flag else 'badge-gray' }}">{{ 'Yes' if r.fired_flag else 'No' }}</span>
+                        </td>
+                        <td>
+                            {% set sev = r.severity|default('low') %}
+                            <span class="badge {{ 'badge-red' if sev == 'critical' else 'badge-orange' if sev == 'high' else 'badge-yellow' if sev == 'medium' else 'badge-gray' }}">{{ sev }}</span>
+                        </td>
+                        <td>{{ "%.3f"|format(r.contribution_score|default(0)|float) if r.contribution_score is not none else '—' }}</td>
+                        <td style="white-space: normal; max-width: 300px;">{{ r.explanation|default('—') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state"><div class="empty-state-text">No rule firings</div></div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- f. Decision Thresholds -->
+<div class="panel">
+    <div class="panel-header">Decision Thresholds</div>
+    <div class="panel-body">
+        {% set td = thresholds.threshold_decline|default(0)|float %}
+        {% set tr = thresholds.threshold_review|default(0)|float %}
+        {% set ts = thresholds.threshold_stepup|default(0)|float %}
+        {% set score = decision.final_risk_score|default(0)|float %}
+        {% set max_t = [td, tr, ts, score, 1.0]|max %}
+        <div class="detail-grid">
+            <div class="detail-item">
+                <div class="detail-label">threshold_decline</div>
+                <div class="detail-value">{{ "%.3f"|format(td) }}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">threshold_review</div>
+                <div class="detail-value">{{ "%.3f"|format(tr) }}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">threshold_stepup</div>
+                <div class="detail-value">{{ "%.3f"|format(ts) }}</div>
+            </div>
+        </div>
+        <div style="margin-top: 16px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;">Score position (0 → 1)</div>
+            <div class="threshold-bar" style="width: 100%;">
+                {% if max_t > 0 %}
+                <div class="threshold-marker" style="left: {{ (ts / max_t * 100) }}%;" title="stepup"></div>
+                <div class="threshold-marker" style="left: {{ (tr / max_t * 100) }}%;" title="review"></div>
+                <div class="threshold-marker" style="left: {{ (td / max_t * 100) }}%;" title="decline"></div>
+                <div class="threshold-score-line" style="left: {{ (score / max_t * 100) }}%;" title="score"></div>
+                {% endif %}
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">Score: {{ "%.3f"|format(score) }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- g. Later Labels -->
+{% if later_labels %}
+<div class="panel">
+    <div class="panel-header">Later Arriving Labels</div>
+    <div class="panel-body">
+        <div class="timeline">
+            {% for lb in later_labels %}
+            <div class="timeline-item">
+                <div class="timeline-dot" style="background: {{ 'var(--red)' if lb.is_fraud else 'var(--green)' }};"></div>
+                <div class="timeline-time">{{ lb.label_received_at|default('—') }}</div>
+                <div class="timeline-event">
+                    <span style="font-weight: 600;">{{ lb.label_type|default('—') }}</span>
+                    {% if lb.is_fraud is not none %}
+                    <span class="badge {{ 'badge-red' if lb.is_fraud else 'badge-green' }}">{{ 'Fraud' if lb.is_fraud else 'Legit' }}</span>
+                    {% endif %}
+                    <span style="color: var(--text-muted);"> &middot; {{ lb.label_source|default('—') }}</span>
+                    {% if lb.source_confidence is not none %}<span style="color: var(--text-muted);"> conf: {{ "%.2f"|format(lb.source_confidence) }}</span>{% endif %}
+                    <span style="color: var(--text-muted);"> &middot; received: {{ lb.label_received_at|default('—') }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- h. Lifecycle Timeline -->
+{% if lifecycle %}
+<div class="panel">
+    <div class="panel-header">Lifecycle Timeline</div>
+    <div class="panel-body">
+        <div class="timeline">
+            {% for e in lifecycle %}
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="timeline-time">{{ e.event_time|default('—') }}</div>
+                <div class="timeline-event">
+                    <span style="font-weight: 600;">{{ e.event_type|default('—') }}</span>
+                    {% if e.actor_type or e.actor_id %}
+                    <span style="color: var(--text-muted);"> &middot; {{ e.actor_type|default('') }}{% if e.actor_id %}: {{ e.actor_id }}{% endif %}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% elif replay and replay.get('error') %}
+<div class="panel">
+    <div class="panel-body">
+        <div class="empty-state">
+            <div class="empty-state-icon">&#9888;</div>
+            <div class="empty-state-text">{{ replay.get('error', 'Error') }}: Transaction #{{ replay.get('auth_event_id', search_id|default('—')) }} not found</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

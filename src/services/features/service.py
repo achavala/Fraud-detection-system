@@ -5,6 +5,7 @@ Outputs both online feature rows (for serving) and offline training feature rows
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Optional, Any
@@ -17,6 +18,7 @@ from src.core.logging import get_logger
 from src.models.transactions import FactAuthorizationEvent
 from src.models.features import FactTransactionFeaturesOnline, FactTransactionFeaturesOffline
 from src.models.dimensions import DimDevice, DimIP, DimCustomer
+from src.models.labels import FactChargebackCase
 from src.schemas.features import OnlineFeaturesResponse
 
 logger = get_logger(__name__)
@@ -196,7 +198,36 @@ class FeatureService:
         )
         result["merchant_txn_count_10m"] = q.scalar() or 0
 
-        result["merchant_chargeback_rate_30d"] = 0.0
+        # Chargeback rate: count chargebacks / total txn for merchant in last 30d
+        cb_subq = (
+            select(func.count())
+            .select_from(FactChargebackCase)
+            .join(
+                FactAuthorizationEvent,
+                FactChargebackCase.auth_event_id == FactAuthorizationEvent.auth_event_id,
+            )
+            .where(
+                and_(
+                    FactAuthorizationEvent.merchant_id == merchant_id,
+                    FactChargebackCase.chargeback_received_at >= d30_ago,
+                )
+            )
+        )
+        cb_result = await self.db.execute(cb_subq)
+        chargeback_count = cb_result.scalar() or 0
+
+        txn_count_q = await self.db.execute(
+            select(func.count()).select_from(FactAuthorizationEvent).where(
+                and_(
+                    FactAuthorizationEvent.merchant_id == merchant_id,
+                    FactAuthorizationEvent.event_time >= d30_ago,
+                )
+            )
+        )
+        total_txn_count = txn_count_q.scalar() or 0
+        result["merchant_chargeback_rate_30d"] = (
+            float(chargeback_count) / float(total_txn_count) if total_txn_count > 0 else 0.0
+        )
 
         if device_id:
             q = await self.db.execute(
@@ -257,18 +288,186 @@ class FeatureService:
     async def _compute_amount_features(
         self, customer_id: int, merchant_id: int, auth_amount: Decimal
     ) -> dict:
+        d90_ago = datetime.now(timezone.utc) - timedelta(days=90)
+
+        p95_customer = None
+        p95_merchant = None
+
+        # 95th percentile of billing_amount_usd for customer (last 90 days)
+        q_cust = await self.db.execute(
+            select(
+                func.percentile_cont(0.95).within_group(
+                    FactAuthorizationEvent.billing_amount_usd
+                )
+            )
+            .select_from(FactAuthorizationEvent)
+            .where(
+                and_(
+                    FactAuthorizationEvent.customer_id == customer_id,
+                    FactAuthorizationEvent.event_time >= d90_ago,
+                    FactAuthorizationEvent.billing_amount_usd.isnot(None),
+                )
+            )
+        )
+        p95_customer = q_cust.scalar()
+
+        # 95th percentile of billing_amount_usd for merchant (last 90 days)
+        q_merch = await self.db.execute(
+            select(
+                func.percentile_cont(0.95).within_group(
+                    FactAuthorizationEvent.billing_amount_usd
+                )
+            )
+            .select_from(FactAuthorizationEvent)
+            .where(
+                and_(
+                    FactAuthorizationEvent.merchant_id == merchant_id,
+                    FactAuthorizationEvent.event_time >= d90_ago,
+                    FactAuthorizationEvent.billing_amount_usd.isnot(None),
+                )
+            )
+        )
+        p95_merchant = q_merch.scalar()
+
+        p95_cust_val = float(p95_customer) if p95_customer else None
+        p95_merch_val = float(p95_merchant) if p95_merchant else None
+
         return {
-            "vs_customer_p95": float(auth_amount) / 500.0 if auth_amount else 0,
-            "vs_merchant_p95": float(auth_amount) / 1000.0 if auth_amount else 0,
+            "vs_customer_p95": (
+                float(auth_amount) / p95_cust_val
+                if auth_amount and p95_cust_val and p95_cust_val > 0
+                else 0.0
+            ),
+            "vs_merchant_p95": (
+                float(auth_amount) / p95_merch_val
+                if auth_amount and p95_merch_val and p95_merch_val > 0
+                else 0.0
+            ),
         }
+
+    def _haversine_km(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """Haversine distance in km between two (lat, lon) points."""
+        R = 6371.0  # Earth radius in km
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlam = math.radians(lon2 - lon1)
+        a = (
+            math.sin(dphi / 2) ** 2
+            + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+        )
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
+
+    def _geo_coords(self, country_code: Optional[str], city_or_region: Optional[str]) -> Optional[tuple[float, float]]:
+        """Look up (lat, lon) from country + city/region. Simple mapping for common locations."""
+        GEO_COORDS: dict[tuple[str, str], tuple[float, float]] = {
+            ("US", ""): (39.8283, -98.5795),
+            ("US", "NYC"): (40.7128, -74.0060),
+            ("US", "NY"): (43.2994, -74.2179),
+            ("US", "LA"): (34.0522, -118.2437),
+            ("US", "CA"): (36.7783, -119.4179),
+            ("US", "CHICAGO"): (41.8781, -87.6298),
+            ("US", "IL"): (40.6331, -89.3985),
+            ("US", "TX"): (31.9686, -99.9018),
+            ("US", "FL"): (27.6648, -81.5158),
+            ("GB", ""): (55.3781, -3.4360),
+            ("GB", "LONDON"): (51.5074, -0.1278),
+            ("UK", ""): (55.3781, -3.4360),
+            ("UK", "LONDON"): (51.5074, -0.1278),
+            ("DE", ""): (51.1657, 10.4515),
+            ("DE", "BERLIN"): (52.5200, 13.4050),
+            ("FR", ""): (46.2276, 2.2137),
+            ("FR", "PARIS"): (48.8566, 2.3522),
+            ("ES", ""): (40.4637, -3.7492),
+            ("ES", "MADRID"): (40.4168, -3.7038),
+            ("IT", ""): (41.8719, 12.5674),
+            ("IT", "ROME"): (41.9028, 12.4964),
+            ("NL", ""): (52.1326, 5.2913),
+            ("NL", "AMSTERDAM"): (52.3676, 4.9041),
+            ("CA", ""): (56.1304, -106.3468),
+            ("CA", "TORONTO"): (43.6532, -79.3832),
+            ("CA", "ON"): (51.2538, -85.3232),
+            ("AU", ""): (-25.2744, 133.7751),
+            ("AU", "SYDNEY"): (-33.8688, 151.2093),
+            ("IN", ""): (20.5937, 78.9629),
+            ("IN", "MUMBAI"): (19.0760, 72.8777),
+            ("CN", ""): (35.8617, 104.1954),
+            ("CN", "BEIJING"): (39.9042, 116.4074),
+            ("JP", ""): (36.2048, 138.2529),
+            ("JP", "TOKYO"): (35.6762, 139.6503),
+            ("BR", ""): (-14.2350, -51.9253),
+            ("BR", "SAO PAULO"): (-23.5505, -46.6333),
+            ("MX", ""): (23.6345, -102.5528),
+            ("MX", "MEXICO CITY"): (19.4326, -99.1332),
+        }
+        cc = (country_code or "").upper().strip()
+        loc = (city_or_region or "").upper().strip()[:50]
+        return GEO_COORDS.get((cc, loc)) or GEO_COORDS.get((cc, ""))
 
     async def _compute_geo_features(
         self, customer_id: int, ip_address: Optional[str]
     ) -> dict:
-        return {
+        result: dict[str, Optional[float]] = {
             "distance_from_home_km": None,
             "distance_from_last_txn_km": None,
         }
+
+        if not ip_address:
+            return result
+
+        # IP geo: lookup from dim_ip (geo_country_code + geo_city)
+        ip_res = await self.db.execute(
+            select(DimIP).where(DimIP.ip_address == ip_address)
+        )
+        ip_row = ip_res.scalar_one_or_none()
+        ip_coords = None
+        if ip_row and (ip_row.geo_country_code or ip_row.geo_city):
+            ip_coords = self._geo_coords(ip_row.geo_country_code, ip_row.geo_city or ip_row.geo_region)
+
+        # Customer home: lookup from dim_customer (home_country_code + home_region)
+        cust_res = await self.db.execute(
+            select(DimCustomer).where(DimCustomer.customer_id == customer_id)
+        )
+        cust_row = cust_res.scalar_one_or_none()
+        home_coords = None
+        if cust_row and cust_row.home_country_code:
+            home_coords = self._geo_coords(cust_row.home_country_code, cust_row.home_region)
+
+        if ip_coords and home_coords:
+            result["distance_from_home_km"] = self._haversine_km(
+                home_coords[0], home_coords[1], ip_coords[0], ip_coords[1]
+            )
+
+        # Last transaction's IP
+        last_txn = await self.db.execute(
+            select(FactAuthorizationEvent.ip_address)
+            .where(FactAuthorizationEvent.customer_id == customer_id)
+            .where(FactAuthorizationEvent.ip_address.isnot(None))
+            .order_by(FactAuthorizationEvent.event_time.desc())
+            .limit(1)
+        )
+        last_ip = last_txn.scalar_one_or_none()
+
+        if last_ip and ip_coords:
+            if str(last_ip) == str(ip_address):
+                result["distance_from_last_txn_km"] = 0.0
+            else:
+                last_ip_res = await self.db.execute(
+                    select(DimIP).where(DimIP.ip_address == last_ip)
+                )
+                last_ip_row = last_ip_res.scalar_one_or_none()
+                last_coords = None
+                if last_ip_row and (last_ip_row.geo_country_code or last_ip_row.geo_city):
+                    last_coords = self._geo_coords(
+                        last_ip_row.geo_country_code, last_ip_row.geo_city or last_ip_row.geo_region
+                    )
+                if last_coords:
+                    result["distance_from_last_txn_km"] = self._haversine_km(
+                        last_coords[0], last_coords[1], ip_coords[0], ip_coords[1]
+                    )
+
+        return result
 
     async def _compute_time_features(self, customer_id: int, now: datetime) -> dict:
         q = await self.db.execute(

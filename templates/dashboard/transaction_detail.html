@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% block title %}Transaction #{{ auth_event_id }} — Fraud Detection Platform{% endblock %}
+
+{% block extra_style %}
+<style>
+    .detail-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 900px) { .detail-panels { grid-template-columns: 1fr; } }
+    .score-bar-bg {
+        height: 6px;
+        background: var(--bg-tertiary);
+        border-radius: 3px;
+        margin-top: 6px;
+        overflow: hidden;
+    }
+    .score-bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.5s;
+    }
+    .reason-chip {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+        margin: 2px 4px 2px 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+    <a href="/ui/transactions" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem;">&larr; Back to search</a>
+</div>
+<div class="page-title">Transaction #{{ auth_event_id }}</div>
+<div class="page-subtitle">Full 360&deg; investigation view</div>
+
+{% set auth = detail.authorization or {} %}
+{% set scores = detail.model_scores or [] %}
+{% set rules = detail.rule_scores or [] %}
+{% set decision = detail.decision or {} %}
+{% set labels = detail.labels or [] %}
+{% set lifecycle = detail.lifecycle_events or [] %}
+{% set graph = detail.graph_score or {} %}
+
+<!-- Transaction Info + Model Score -->
+<div class="detail-panels">
+    <div class="panel">
+        <div class="panel-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Transaction Info
+        </div>
+        <div class="panel-body">
+            {% if auth %}
+            <div class="detail-grid">
+                <div class="detail-item">
+                    <div class="detail-label">Amount</div>
+                    <div class="detail-value" style="font-size: 1.3rem; font-weight: 700;">
+                        ${{ "%.2f"|format(auth.billing_amount_usd|default(auth.auth_amount|default(0))|float) }}
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">{{ auth.currency_code|default('USD') }}</span>
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Status</div>
+                    <div class="detail-value">
+                        {% set st = auth.auth_status|default('unknown') %}
+                        <span class="badge {{ 'badge-green' if st == 'approved' else 'badge-red' if st == 'declined' else 'badge-yellow' }}">{{ st }}</span>
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Merchant</div>
+                    <div class="detail-value">{{ auth.merchant_id|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Customer</div>
+                    <div class="detail-value">{{ auth.customer_id|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Card</div>
+                    <div class="detail-value">{{ auth.card_id|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Channel</div>
+                    <div class="detail-value">{{ auth.channel|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Entry Mode</div>
+                    <div class="detail-value">{{ auth.entry_mode|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Event Time</div>
+                    <div class="detail-value">{{ auth.event_time|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">IP Address</div>
+                    <div class="detail-value">{{ auth.ip_address|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Country</div>
+                    <div class="detail-value">{{ auth.merchant_country_code|default('—') }}</div>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state"><div class="empty-state-text">No authorization data found</div></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+            Model Scores
+        </div>
+        <div class="panel-body">
+            {% if scores %}
+            {% for s in scores %}
+            <div style="padding: 10px 0; {{ 'border-bottom: 1px solid var(--border);' if not loop.last else '' }}">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <span style="font-weight: 600; font-size: 0.85rem;">{{ s.model_version|default('—') }}</span>
+                        {% if s.shadow_mode_flag %}<span class="badge badge-gray" style="margin-left: 6px;">shadow</span>{% endif %}
+                    </div>
+                    <div style="text-align: right;">
+                        {% set prob = s.fraud_probability|default(0)|float %}
+                        <span style="font-size: 1.1rem; font-weight: 700; color: {{ 'var(--red)' if prob > 0.7 else 'var(--orange)' if prob > 0.4 else 'var(--yellow)' if prob > 0.2 else 'var(--green)' }};">
+                            {{ "%.4f"|format(prob) }}
+                        </span>
+                    </div>
+                </div>
+                <div class="score-bar-bg">
+                    {% set prob = s.fraud_probability|default(0)|float %}
+                    <div class="score-bar-fill" style="width: {{ (prob * 100)|int }}%; background: {{ 'var(--red)' if prob > 0.7 else 'var(--orange)' if prob > 0.4 else 'var(--yellow)' if prob > 0.2 else 'var(--green)' }};"></div>
+                </div>
+                <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px;">
+                    {% set rb = s.risk_band|default('—') %}
+                    <span class="badge {{ 'badge-green' if rb == 'low' else 'badge-yellow' if rb == 'medium' else 'badge-orange' if rb == 'high' else 'badge-red' if rb == 'critical' else 'badge-gray' }}">{{ rb }}</span>
+                    {% if s.top_reason_codes %}
+                        {% for code in s.top_reason_codes %}
+                        <span class="reason-chip">{{ code }}</span>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="empty-state"><div class="empty-state-text">No model scores recorded</div></div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Rule Firings + Decision -->
+<div class="detail-panels">
+    <div class="panel">
+        <div class="panel-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Rule Firings
+        </div>
+        <div class="panel-body">
+            {% if rules %}
+            <div class="table-wrap" style="border: none;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rule</th>
+                            <th>Severity</th>
+                            <th>Score</th>
+                            <th>Explanation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rules %}
+                        <tr>
+                            <td style="font-weight: 600;">{{ r.rule_name|default(r.rule_id|default('—')) }}</td>
+                            <td>
+                                {% set sev = r.severity|default('low') %}
+                                <span class="badge {{ 'badge-red' if sev == 'critical' else 'badge-orange' if sev == 'high' else 'badge-yellow' if sev == 'medium' else 'badge-gray' }}">{{ sev }}</span>
+                            </td>
+                            <td>{{ "%.3f"|format(r.contribution_score|default(0)|float) }}</td>
+                            <td style="white-space: normal; max-width: 220px;">{{ r.explanation|default('—')|truncate(80) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state"><div class="empty-state-text">No rules fired</div></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            Decision
+        </div>
+        <div class="panel-body">
+            {% if decision %}
+            <div class="detail-grid">
+                <div class="detail-item">
+                    <div class="detail-label">Decision</div>
+                    <div class="detail-value">
+                        {% set dt = decision.decision_type|default('—') %}
+                        <span class="badge {{ 'badge-green' if dt == 'approve' else 'badge-red' if dt in ('decline', 'hard_decline') else 'badge-yellow' }}" style="font-size: 0.85rem;">{{ dt }}</span>
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Source</div>
+                    <div class="detail-value">{{ decision.decision_source|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Model Version</div>
+                    <div class="detail-value">{{ decision.model_version|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Final Risk Score</div>
+                    <div class="detail-value">{{ "%.4f"|format(decision.final_risk_score|default(0)|float) }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Override</div>
+                    <div class="detail-value">
+                        {% if decision.manual_override_flag %}
+                        <span class="badge badge-orange">OVERRIDE</span>
+                        {% else %}
+                        <span style="color: var(--text-muted);">No</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Decision Time</div>
+                    <div class="detail-value">{{ decision.decision_time|default('—') }}</div>
+                </div>
+            </div>
+            {% if decision.manual_override_reason %}
+            <div style="margin-top: 12px; padding: 10px; background: var(--orange-bg); border-radius: var(--radius); font-size: 0.82rem; color: var(--orange);">
+                Override Reason: {{ decision.manual_override_reason }}
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="empty-state"><div class="empty-state-text">No decision recorded</div></div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Labels + Graph Score -->
+<div class="detail-panels">
+    <div class="panel">
+        <div class="panel-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            Fraud Labels
+        </div>
+        <div class="panel-body">
+            {% if labels %}
+            <div class="table-wrap" style="border: none;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Label ID</th>
+                            <th>Is Fraud</th>
+                            <th>Source</th>
+                            <th>Reason</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for l in labels %}
+                        <tr>
+                            <td>{{ l.fraud_label_id|default('—') }}</td>
+                            <td>
+                                {% if l.is_fraud %}
+                                <span class="badge badge-red">FRAUD</span>
+                                {% else %}
+                                <span class="badge badge-green">LEGIT</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ l.label_source|default('—') }}</td>
+                            <td style="white-space: normal;">{{ l.label_reason|default('—') }}</td>
+                            <td>{{ l.created_at|default('—') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state"><div class="empty-state-text">No fraud labels</div></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            Graph Cluster Score
+        </div>
+        <div class="panel-body">
+            {% if graph %}
+            <div class="detail-grid">
+                <div class="detail-item">
+                    <div class="detail-label">Cluster ID</div>
+                    <div class="detail-value">{{ graph.cluster_id|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Cluster Risk Score</div>
+                    <div class="detail-value" style="font-size: 1.1rem; font-weight: 700;">{{ "%.4f"|format(graph.cluster_risk_score|default(0)|float) }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Cluster Size</div>
+                    <div class="detail-value">{{ graph.cluster_size|default('—') }}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Known Fraud Nodes</div>
+                    <div class="detail-value">{{ graph.known_fraud_nodes|default(0) }}</div>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state"><div class="empty-state-text">No graph cluster data</div></div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Lifecycle Timeline -->
+<div class="panel">
+    <div class="panel-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Lifecycle Timeline
+    </div>
+    <div class="panel-body">
+        {% if lifecycle %}
+        <div class="timeline">
+            {% for e in lifecycle %}
+            <div class="timeline-item">
+                <div class="timeline-dot" style="background: {{ 'var(--red)' if 'fraud' in (e.event_type|default(''))|lower else 'var(--accent)' }};"></div>
+                <div class="timeline-time">{{ e.event_time|default(e.created_at|default('—')) }}</div>
+                <div class="timeline-event">
+                    <span style="font-weight: 600;">{{ e.event_type|default('—') }}</span>
+                    {% if e.actor_type %}<span style="color: var(--text-muted);"> &middot; {{ e.actor_type }}{% if e.actor_id %}: {{ e.actor_id }}{% endif %}</span>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state"><div class="empty-state-text">No lifecycle events recorded</div></div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

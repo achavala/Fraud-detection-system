@@ -82,7 +82,7 @@ class TestMLModel:
             "merchant_chargeback_rate_30d": 0,
             "customer_txn_count_1h": 1,
         }
-        prob = scorer._predict(features, "xgb-v4.2.0")
+        prob = scorer._predict_heuristic(features, "xgb-v4.2.0")
         assert 0 <= prob <= 1
 
     def test_model_predict_high_risk(self):
@@ -100,7 +100,7 @@ class TestMLModel:
             "merchant_chargeback_rate_30d": 0.1,
             "customer_txn_count_1h": 20,
         }
-        prob = scorer._predict(features, "xgb-v4.2.0")
+        prob = scorer._predict_heuristic(features, "xgb-v4.2.0")
         assert prob > 0.3
 
     def test_risk_band_assignment(self):

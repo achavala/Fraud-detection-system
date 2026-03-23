@@ -1,0 +1,145 @@
+
+[1mFraud Detection Platform — Full Demo Walkthrough[0m
+[2mEst. duration: 12-15 minutes[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 1: FRAUD SIMULATION  (~2 min)[0m
+[1m[94m======================================================================[0m
+
+[96m  Generated 9,997 transactions in 0.060s[0m
+[96m  Graph edges: 29,940[0m
+
+[1mFraud distribution:[0m
+                   ato:     63 ( 0.63%)
+          card_testing:     38 ( 0.38%)
+            fraud_ring:     60 ( 0.60%)
+        friendly_fraud:     38 ( 0.38%)
+   merchant_compromise:     25 ( 0.25%)
+                normal:  9,750 (97.53%)
+    synthetic_identity:     23 ( 0.23%)
+
+[1mClass imbalance:[0m
+  Legitimate:  9,750 (97.5%)
+  Fraud:         247 (2.5%)
+[92m  ✓ Section 1 complete — simulation data ready[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 2: MODEL TRAINING  (~2 min)[0m
+[1m[94m======================================================================[0m
+
+2026-03-10 15:14:38 [info     ] xgboost_trained                auc_pr=1.0 auc_roc=1.0 model_version=demo-xgb-v1 path=/Users/chavala/Fraud Detection system/models_artifact/demo-xgb-v1.pkl
+[96m  Trained XGBoost in 0.50s[0m
+[96m  AUC-ROC:  1.0000[0m
+[96m  AUC-PR:   1.0000[0m
+[96m  Precision (p=0.55): 1.0000[0m
+[96m  Recall (p=0.55):    1.0000[0m
+[92m  ✓ Section 2 complete — model artifact saved[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 3: REAL-TIME SCORING  (~2 min)[0m
+[1m[94m======================================================================[0m
+
+
+[1mSUSPICIOUS transaction:[0m
+[96m    ML probability: 0.8575 | Ensemble: 0.9003 | Risk band: HIGH[0m
+[96m    Rules fired: R001(high_velocity_card_10m), R002(multi_account_device_30d), R003(vpn_proxy_tor), R004(amount_exceeds_3x_p95), R005(multi_card_ip_7d), R006(rapid_fire_under_30s), R007(emulator_rooted_device)[0m
+
+[1mNORMAL transaction:[0m
+[96m    ML probability: 0.1459 | Ensemble: 0.1021 | Risk band: LOW[0m
+[92m  ✓ Section 3 complete — scoring demonstrated[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 4: RULES ENGINE  (~1 min)[0m
+[1m[94m======================================================================[0m
+
+[96m  Evaluating rules on suspicious transaction:[0m
+    [93m▶ R001 high_velocity_card_10m: Card used 8 times in 10 minutes[0m
+    [93m▶ R002 multi_account_device_30d: Device linked to 4 accounts in 30 days[0m
+    [93m▶ R003 vpn_proxy_tor: Transaction originated from VPN/proxy/Tor[0m
+    [93m▶ R004 amount_exceeds_3x_p95: Amount is 4.2x customer's p95[0m
+    [93m▶ R005 multi_card_ip_7d: IP used with 6 different cards in 7 days[0m
+    [93m▶ R006 rapid_fire_under_30s: Only 15s since last transaction[0m
+    [93m▶ R007 emulator_rooted_device: Device risk score is 0.72 (emulator/rooted)[0m
+[92m  ✓ Section 4 complete — rules engine evaluated[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 5: GRAPH ANALYSIS  (~2 min)[0m
+[1m[94m======================================================================[0m
+
+[96m  Built graph: 6 nodes, 5 edges[0m
+[96m  Detected 1 fraud ring(s)[0m
+[96m    Cluster: 3 accounts, 1 shared devices, 1 shared IPs, ring_score=0.74[0m
+[92m  ✓ Section 5 complete — fraud ring detected[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 6: BENCHMARK  (~2 min)[0m
+[1m[94m======================================================================[0m
+
+[96m  Latency percentiles (ms):[0m
+              scoring_latency: p50=0.009 p95=0.011 p99=0.030 | 104,452 req/s
+          feature_computation: p50=0.001 p95=0.002 p99=0.002
+                 rules_engine: p50=0.003 p95=0.004 p99=0.004
+              model_inference: p50=0.676 p95=1.486 p99=1.827
+                   end_to_end: p50=0.036 p95=0.090 p99=0.110
+
+[1mSLO Results:[0m
+  [92m✓[0m scoring_p99_50ms: PASS
+  [92m✓[0m model_inference_p99_10ms: PASS
+  [92m✓[0m rules_p99_5ms: PASS
+  [92m✓[0m end_to_end_p99_100ms: PASS
+[92m  ✓ Section 6 complete — benchmark run[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 7: THRESHOLD OPTIMIZATION  (~2 min)[0m
+[1m[94m======================================================================[0m
+
+[96m  Single-threshold optimal: 0.73[0m
+[96m    Net savings: $-18,751.75[0m
+[96m    Approval rate: 99.55%[0m
+[96m    FPR: 0.31%[0m
+[96m  3-tier optimal: decline=0.75, review=0.70, step_up=0.55[0m
+[96m    Net savings: $-18,293.99[0m
+[92m  ✓ Section 7 complete — threshold optimization done[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 8: ECONOMICS  (~1 min)[0m
+[1m[94m======================================================================[0m
+
+[96m  Prevented fraud $:  $801.35[0m
+[96m  Missed fraud $:     $19,263.49[0m
+[96m  FP volume $:        $1,546.08[0m
+[96m  Business cost $:    $19,553.09[0m
+[96m  Net savings:        $-18,751.75[0m
+[96m  Fraud basis points: 17.06[0m
+[92m  ✓ Section 8 complete — economics sample[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 9: FEATURE PARITY  (~1 min)[0m
+[1m[94m======================================================================[0m
+
+[96m  Feature registry: 19 features[0m
+    customer_txn_count_1h: int — Customer transactions in last 1 hour
+    customer_txn_count_24h: int — Customer transactions in last 24 hours
+    customer_spend_24h: float — Customer total spend in last 24 hours
+    card_txn_count_10m: int — Card transactions in last 10 minutes
+    merchant_txn_count_10m: int — Merchant transactions in last 10 minutes
+[96m    ... and 14 more[0m
+[96m  Schema checksum: 5365941acd28050b[0m
+[92m  ✓ Section 9 complete — feature registry shown[0m
+
+[1m[94m======================================================================[0m
+[1m[94m  SECTION 10: SUMMARY  (~1 min)[0m
+[1m[94m======================================================================[0m
+
+[92m  ✓ Fraud simulation (7 attack patterns)[0m
+[92m  ✓ Model training (XGBoost / LightGBM)[0m
+[92m  ✓ Real-time scoring (ML + rules ensemble)[0m
+[92m  ✓ Rules engine (8 deterministic rules)[0m
+[92m  ✓ Graph analysis (fraud ring detection)[0m
+[92m  ✓ Latency benchmark (SLO verification)[0m
+[92m  ✓ Threshold optimization (1-tier & 3-tier)[0m
+[92m  ✓ Economics (net savings, basis points)[0m
+[92m  ✓ Feature parity (19-feature registry)[0m
+
+[1m[92mAll capabilities demonstrated. Demo complete.[0m
+

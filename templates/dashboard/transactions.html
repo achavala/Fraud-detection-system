@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Transactions — Fraud Detection Platform{% endblock %}
+
+{% block content %}
+<div class="page-title">Transaction Search</div>
+<div class="page-subtitle">Search and filter authorization events across the platform</div>
+
+<div class="card" style="margin-bottom: 24px;">
+    <form method="get" action="/ui/transactions">
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Customer ID</label>
+                <input type="number" name="customer_id" class="form-input" placeholder="e.g. 10042"
+                       value="{{ filters.customer_id|default('', true) }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Card ID</label>
+                <input type="number" name="card_id" class="form-input" placeholder="e.g. 5001"
+                       value="{{ filters.card_id|default('', true) }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Merchant ID</label>
+                <input type="number" name="merchant_id" class="form-input" placeholder="e.g. 2201"
+                       value="{{ filters.merchant_id|default('', true) }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select name="auth_status" class="form-select">
+                    <option value="">All</option>
+                    {% for s in ['pending', 'approved', 'declined', 'review', 'challenge'] %}
+                    <option value="{{ s }}" {{ 'selected' if filters.auth_status == s else '' }}>{{ s|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Min Amount (USD)</label>
+                <input type="number" step="0.01" name="min_amount" class="form-input" placeholder="0.00"
+                       value="{{ filters.min_amount|default('', true) }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Max Amount (USD)</label>
+                <input type="number" step="0.01" name="max_amount" class="form-input" placeholder="99999.99"
+                       value="{{ filters.max_amount|default('', true) }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Start Date</label>
+                <input type="datetime-local" name="start_time" class="form-input"
+                       value="{{ filters.start_time|default('', true) }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">End Date</label>
+                <input type="datetime-local" name="end_time" class="form-input"
+                       value="{{ filters.end_time|default('', true) }}">
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 4px;">
+            <button type="submit" class="btn btn-primary">Search</button>
+            <a href="/ui/transactions" class="btn btn-secondary">Clear</a>
+        </div>
+    </form>
+</div>
+
+{% if result %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Results — {{ "{:,}".format(result.total|default(0)) }} transactions</div>
+    </div>
+    {% if result.transactions %}
+    <div class="table-wrap" style="border: none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Auth Event ID</th>
+                    <th>Transaction ID</th>
+                    <th>Amount</th>
+                    <th>Currency</th>
+                    <th>Status</th>
+                    <th>Channel</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in result.transactions %}
+                <tr class="clickable-row" onclick="window.location='/ui/transaction/{{ t.auth_event_id }}'">
+                    <td style="font-weight: 600; color: var(--accent);">#{{ t.auth_event_id }}</td>
+                    <td>{{ t.transaction_id|default('—') }}</td>
+                    <td>${{ "%.2f"|format(t.billing_amount_usd|default(t.auth_amount|default(0))|float) }}</td>
+                    <td>{{ t.currency_code|default('USD') }}</td>
+                    <td>
+                        {% set st = t.auth_status|default('unknown') %}
+                        <span class="badge {{ 'badge-green' if st == 'approved' else 'badge-red' if st == 'declined' else 'badge-yellow' if st in ('pending', 'review') else 'badge-gray' }}">
+                            {{ st }}
+                        </span>
+                    </td>
+                    <td>{{ t.channel|default('—') }}</td>
+                    <td>{{ t.event_time|default('—') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">&#128269;</div>
+        <div class="empty-state-text">No transactions found matching your criteria</div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -3,6 +3,7 @@ Slack and notification integration for fraud ops alerts.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 from src.core.config import get_settings
 from src.core.logging import get_logger
@@ -56,11 +57,16 @@ class SlackNotifier:
         ]
 
         try:
-            await client.chat_postMessage(
-                channel=self.settings.slack_fraud_ops_channel,
-                blocks=blocks,
-                text=f"Fraud alert: auth #{auth_event_id} - {risk_band}",
+            await asyncio.wait_for(
+                client.chat_postMessage(
+                    channel=self.settings.slack_fraud_ops_channel,
+                    blocks=blocks,
+                    text=f"Fraud alert: auth #{auth_event_id} - {risk_band}",
+                ),
+                timeout=5.0,
             )
+        except asyncio.TimeoutError:
+            logger.warning("slack_send_timeout", auth_event_id=auth_event_id)
         except Exception as e:
             logger.warning("slack_send_failed", error=str(e))
 

@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.9.6, pytest-7.4.4, pluggy-1.6.0 -- /Library/Developer/CommandLineTools/usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/chavala/Fraud Detection system
+configfile: pyproject.toml
+plugins: asyncio-0.23.3, langsmith-0.4.37, cov-4.1.0, anyio-3.7.1, Faker-22.2.0
+asyncio: mode=auto
+collecting ... collected 8 items / 1 deselected / 7 selected
+
+tests/evaluation/test_adversarial.py::test_card_testing_detection_rate PASSED [ 14%]
+tests/evaluation/test_adversarial.py::test_ato_detection_rate PASSED     [ 28%]
+tests/evaluation/test_adversarial.py::test_friendly_fraud_blind_spot PASSED [ 42%]
+tests/evaluation/test_adversarial.py::test_fraud_ring_detection_via_graph_features PASSED [ 57%]
+tests/evaluation/test_adversarial.py::test_threshold_brittleness_under_drift PASSED [ 71%]
+tests/evaluation/test_adversarial.py::test_false_positive_concentration_by_channel PASSED [ 85%]
+tests/evaluation/test_adversarial.py::test_synthetic_identity_feature_separation PASSED [100%]
+
+======================= 7 passed, 1 deselected in 2.37s ========================

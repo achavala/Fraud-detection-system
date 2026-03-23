@@ -23,5 +23,8 @@ async def score_authorization(
     Receives auth context, computes features, runs rules + ML model,
     and returns decision in milliseconds.
     """
-    service = ScoringService(db)
-    return await service.score_authorization(request)
+    try:
+        service = ScoringService(db)
+        return await service.score_authorization(request)
+    except (ConnectionError, OSError) as e:
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {e!s}")

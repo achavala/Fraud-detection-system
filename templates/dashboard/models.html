@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Model Health — Fraud Detection Platform{% endblock %}
+
+{% block extra_style %}
+<style>
+    .model-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 16px;
+    }
+    .model-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 20px;
+        transition: border-color 0.15s;
+    }
+    .model-card:hover { border-color: var(--border-light); }
+    .model-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 16px;
+    }
+    .model-name {
+        font-weight: 700;
+        font-size: 0.95rem;
+    }
+    .model-meta {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 2px;
+    }
+    .health-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 4px;
+        vertical-align: middle;
+    }
+    .model-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+    }
+    .model-stat-label {
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .model-stat-value {
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin-top: 2px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">Model Health Dashboard</div>
+<div class="page-subtitle">ML model performance, drift monitoring, and deployment status</div>
+
+{% if models %}
+<div class="model-grid">
+    {% for m in models %}
+    <div class="model-card">
+        <div class="model-card-head">
+            <div>
+                <div class="model-name">{{ m.model_version }}</div>
+                <div class="model-meta">{{ m.family|default('—') }} &middot; Owner: {{ m.owner|default('—') }}</div>
+            </div>
+            <span class="badge {{ 'badge-green' if m.health == 'healthy' else 'badge-yellow' if m.health == 'degraded' else 'badge-red' }}">
+                <span class="health-dot" style="background: {{ 'var(--green)' if m.health == 'healthy' else 'var(--yellow)' if m.health == 'degraded' else 'var(--red)' }};"></span>
+                {{ m.health|upper }}
+            </span>
+        </div>
+
+        <div>
+            <span class="badge {{ 'badge-blue' if m.status == 'production' else 'badge-gray' }}">{{ m.status }}</span>
+        </div>
+
+        <div class="model-stats">
+            <div>
+                <div class="model-stat-label">AUC-ROC</div>
+                <div class="model-stat-value" style="color: {{ 'var(--green)' if (m.auc_roc|default(0)|float) >= 0.9 else 'var(--yellow)' if (m.auc_roc|default(0)|float) >= 0.8 else 'var(--red)' }};">
+                    {% if m.auc_roc %}{{ "%.3f"|format(m.auc_roc|float) }}{% else %}—{% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="model-stat-label">Eval Date</div>
+                <div class="model-stat-value" style="font-size: 0.82rem; color: var(--text-secondary);">
+                    {{ m.eval_date|default('—') }}
+                </div>
+            </div>
+            <div>
+                <div class="model-stat-label">Drift Alerts</div>
+                <div class="model-stat-value" style="color: {{ 'var(--green)' if m.drift_alerts == 0 else 'var(--yellow)' if m.drift_alerts < 3 else 'var(--red)' }};">
+                    {{ m.drift_alerts|default(0) }}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-state-icon">&#128202;</div>
+        <div class="empty-state-text">No models registered in production, shadow, or staging</div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

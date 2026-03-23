@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}Graph Intelligence — Fraud Detection Platform{% endblock %}
+
+{% block extra_style %}
+<style>
+    .graph-svg-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 24px;
+        background: var(--bg-primary);
+        border-radius: var(--radius);
+        margin: 16px 0;
+    }
+    .graph-svg-container svg {
+        flex-shrink: 0;
+    }
+    .graph-node {
+        cursor: default;
+        transition: filter 0.15s;
+    }
+    .graph-node:hover { filter: brightness(1.2); }
+    .graph-node-center { filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.5)); }
+    .graph-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; }
+    .graph-legend-dot {
+        width: 12px; height: 12px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+    .badge-cyan { background: rgba(6, 182, 212, 0.12); color: var(--cyan); }
+    .badge-purple { background: rgba(168, 85, 247, 0.12); color: var(--purple); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">Graph Intelligence</div>
+<div class="page-subtitle">Fraud ring detection, entity relationships, and cluster investigation</div>
+
+{# ── Search Bar ── #}
+<div class="card" style="margin-bottom: 24px;">
+    <form method="get" action="/ui/graph">
+        <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+                <label class="form-label">Node ID</label>
+                <input type="text" name="node_id" class="form-input"
+                       placeholder="e.g. account:1234, device:dev_001"
+                       value="{{ search_node|default('', true) }}">
+            </div>
+            <div class="form-group" style="align-self: flex-end;">
+                <button type="submit" class="btn btn-primary">Expand Cluster</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+{# ── Detected Fraud Rings ── #}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Detected Fraud Rings</div>
+    </div>
+    {% if rings and rings|length > 0 %}
+    <div class="table-wrap" style="border: none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Cluster ID</th>
+                    <th>Ring Score</th>
+                    <th>Accounts</th>
+                    <th>Shared Devices</th>
+                    <th>Shared IPs</th>
+                    <th>Total Nodes</th>
+                    <th>Avg Risk</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ring in rings %}
+                <tr class="clickable-row" onclick="window.location='/ui/graph?node_id={{ ring.cluster_id|urlencode }}'">
+                    <td style="font-weight: 600; color: var(--accent);">{{ ring.cluster_id }}</td>
+                    <td>
+                        {% set rs = ring.ring_score|default(0)|float %}
+                        <span class="badge {{ 'badge-red' if rs > 0.7 else 'badge-orange' if rs > 0.5 else 'badge-yellow' if rs > 0.3 else 'badge-green' }}">
+                            {{ "%.2f"|format(rs) }}
+                        </span>
+                    </td>
+                    <td>{{ ring.account_count|default(0) }}</td>
+                    <td>{{ ring.shared_devices|default(0) }}</td>
+                    <td>{{ ring.shared_ips|default(0) }}</td>
+                    <td>{{ ring.node_count|default(0) }}</td>
+                    <td>{{ "%.2f"|format(ring.avg_risk_score|default(0)|float) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">&#8709;</div>
+        <div class="empty-state-text">No fraud rings detected. Use the search bar to expand a cluster by node ID.</div>
+    </div>
+    {% endif %}
+</div>
+
+{# ── Cluster Detail (when cluster_detail is set) ── #}
+{% if cluster_detail %}
+{% set hop_1 = cluster_detail.neighbors_by_hop.hop_1|default([]) %}
+{% set hop_2 = cluster_detail.neighbors_by_hop.hop_2|default([]) %}
+{% set hop_3 = cluster_detail.neighbors_by_hop.hop_3|default([]) %}
+{% set center = cluster_detail.center_node %}
+{% set total = cluster_detail.total_reachable|default(0) %}
+
+<div class="panel" style="margin-top: 24px;">
+    <div class="panel-header">Cluster Investigation</div>
+    <div class="panel-body">
+        {# a. Cluster Summary KPI Grid ── #}
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Center Node</div>
+                <div class="kpi-value" style="font-size: 1.1rem; word-break: break-all;">{{ center|default('—') }}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Total Reachable Entities</div>
+                <div class="kpi-value">{{ total }}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Hop 1</div>
+                <div class="kpi-value">{{ hop_1|length }}</div>
+                <div class="kpi-sub">Direct neighbors</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Hop 2</div>
+                <div class="kpi-value">{{ hop_2|length }}</div>
+                <div class="kpi-sub">2 steps away</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Hop 3</div>
+                <div class="kpi-value">{{ hop_3|length }}</div>
+                <div class="kpi-sub">3 steps away</div>
+            </div>
+        </div>
+
+        {# b. Interactive Graph Visualization (SVG) ── #}
+        <div class="graph-svg-container">
+            <svg width="600" height="600" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%" style="stop-color: var(--accent); stop-opacity: 0.4"/>
+                        <stop offset="100%" style="stop-color: var(--accent); stop-opacity: 0"/>
+                    </radialGradient>
+                </defs>
+                <g transform="translate(300, 300)">
+                    {# Center node ── #}
+                    <circle class="graph-node graph-node-center" cx="0" cy="0" r="24" fill="#3b82f6" stroke="#1e293b" stroke-width="2">
+                        <title>{{ center|default('center') }}</title>
+                    </circle>
+
+                    {# Hop 1: inner ring (r=120), lines + nodes ── #}
+                    {% for node in hop_1 %}
+                    <g transform="rotate({{ (360 / (hop_1|length) * loop.index0) if hop_1|length > 0 else 0 }}) translate(0, -120)">
+                        <line x1="0" y1="120" x2="0" y2="0" stroke="var(--border-light)" stroke-width="1" stroke-opacity="0.7"/>
+                        <circle class="graph-node" cx="0" cy="0" r="14" fill="{{ {'account': '#3b82f6', 'device': '#f97316', 'ip': '#a855f7', 'card': '#06b6d4', 'merchant': '#22c55e', 'email': '#ef4444'}.get((node.node_type|default('account')|string|lower), '#3b82f6') }}" stroke="#1e293b" stroke-width="1.5">
+                            <title>{{ node.node_id|default('') }} — Risk: {{ "%.2f"|format(node.risk_score|default(0)|float) }}</title>
+                        </circle>
+                    </g>
+                    {% endfor %}
+
+                    {# Hop 2: middle ring (r=200) ── #}
+                    {% for node in hop_2 %}
+                    <g transform="rotate({{ (360 / (hop_2|length) * loop.index0) if hop_2|length > 0 else 0 }}) translate(0, -200)">
+                        <circle class="graph-node" cx="0" cy="0" r="12" fill="{{ {'account': '#3b82f6', 'device': '#f97316', 'ip': '#a855f7', 'card': '#06b6d4', 'merchant': '#22c55e', 'email': '#ef4444'}.get((node.node_type|default('account')|string|lower), '#3b82f6') }}" stroke="#1e293b" stroke-width="1">
+                            <title>{{ node.node_id|default('') }} — Risk: {{ "%.2f"|format(node.risk_score|default(0)|float) }}</title>
+                        </circle>
+                    </g>
+                    {% endfor %}
+
+                    {# Hop 3: outer ring (r=280) ── #}
+                    {% for node in hop_3 %}
+                    <g transform="rotate({{ (360 / (hop_3|length) * loop.index0) if hop_3|length > 0 else 0 }}) translate(0, -280)">
+                        <circle class="graph-node" cx="0" cy="0" r="10" fill="{{ {'account': '#3b82f6', 'device': '#f97316', 'ip': '#a855f7', 'card': '#06b6d4', 'merchant': '#22c55e', 'email': '#ef4444'}.get((node.node_type|default('account')|string|lower), '#3b82f6') }}" stroke="#1e293b" stroke-width="1">
+                            <title>{{ node.node_id|default('') }} — Risk: {{ "%.2f"|format(node.risk_score|default(0)|float) }}</title>
+                        </circle>
+                    </g>
+                    {% endfor %}
+                </g>
+            </svg>
+        </div>
+
+        {# c. Entity Table ── #}
+        <div class="card-header" style="margin-top: 8px;">
+            <div class="card-title">Entity Table</div>
+        </div>
+        <div class="table-wrap" style="border: none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Node ID</th>
+                        <th>Type</th>
+                        <th>Risk Score</th>
+                        <th>Hop Distance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {# Center node ── #}
+                    <tr>
+                        <td style="font-weight: 600;">{{ center|default('—') }}</td>
+                        <td><span class="badge badge-blue">center</span></td>
+                        <td>—</td>
+                        <td>0</td>
+                    </tr>
+                    {% for node in hop_1 %}
+                    <tr>
+                        <td>{{ node.node_id|default('—') }}</td>
+                        <td><span class="badge {{ 'badge-blue' if (node.node_type|default('')|string|lower) == 'account' else 'badge-orange' if (node.node_type|default('')|string|lower) == 'device' else 'badge-purple' if (node.node_type|default('')|string|lower) == 'ip' else 'badge-cyan' if (node.node_type|default('')|string|lower) == 'card' else 'badge-green' if (node.node_type|default('')|string|lower) == 'merchant' else 'badge-red' if (node.node_type|default('')|string|lower) == 'email' else 'badge-gray' }}">{{ node.node_type|default('—') }}</span></td>
+                        <td>
+                            {% set rsk = node.risk_score|default(0)|float %}
+                            <span class="badge {{ 'badge-red' if rsk > 0.7 else 'badge-yellow' if rsk > 0.4 else 'badge-green' }}">{{ "%.2f"|format(rsk) }}</span>
+                        </td>
+                        <td>1</td>
+                    </tr>
+                    {% endfor %}
+                    {% for node in hop_2 %}
+                    <tr>
+                        <td>{{ node.node_id|default('—') }}</td>
+                        <td><span class="badge {{ 'badge-blue' if (node.node_type|default('')|string|lower) == 'account' else 'badge-orange' if (node.node_type|default('')|string|lower) == 'device' else 'badge-purple' if (node.node_type|default('')|string|lower) == 'ip' else 'badge-cyan' if (node.node_type|default('')|string|lower) == 'card' else 'badge-green' if (node.node_type|default('')|string|lower) == 'merchant' else 'badge-red' if (node.node_type|default('')|string|lower) == 'email' else 'badge-gray' }}">{{ node.node_type|default('—') }}</span></td>
+                        <td>
+                            {% set rsk = node.risk_score|default(0)|float %}
+                            <span class="badge {{ 'badge-red' if rsk > 0.7 else 'badge-yellow' if rsk > 0.4 else 'badge-green' }}">{{ "%.2f"|format(rsk) }}</span>
+                        </td>
+                        <td>2</td>
+                    </tr>
+                    {% endfor %}
+                    {% for node in hop_3 %}
+                    <tr>
+                        <td>{{ node.node_id|default('—') }}</td>
+                        <td><span class="badge {{ 'badge-blue' if (node.node_type|default('')|string|lower) == 'account' else 'badge-orange' if (node.node_type|default('')|string|lower) == 'device' else 'badge-purple' if (node.node_type|default('')|string|lower) == 'ip' else 'badge-cyan' if (node.node_type|default('')|string|lower) == 'card' else 'badge-green' if (node.node_type|default('')|string|lower) == 'merchant' else 'badge-red' if (node.node_type|default('')|string|lower) == 'email' else 'badge-gray' }}">{{ node.node_type|default('—') }}</span></td>
+                        <td>
+                            {% set rsk = node.risk_score|default(0)|float %}
+                            <span class="badge {{ 'badge-red' if rsk > 0.7 else 'badge-yellow' if rsk > 0.4 else 'badge-green' }}">{{ "%.2f"|format(rsk) }}</span>
+                        </td>
+                        <td>3</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {# Legend ── #}
+        <div class="card" style="margin-top: 20px; padding: 14px 20px;">
+            <div class="card-title" style="margin-bottom: 10px; font-size: 0.85rem;">Node Type Legend</div>
+            <div class="detail-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+                <div class="graph-legend-item"><span class="graph-legend-dot" style="background: #3b82f6;"></span> account</div>
+                <div class="graph-legend-item"><span class="graph-legend-dot" style="background: #f97316;"></span> device</div>
+                <div class="graph-legend-item"><span class="graph-legend-dot" style="background: #a855f7;"></span> ip</div>
+                <div class="graph-legend-item"><span class="graph-legend-dot" style="background: #06b6d4;"></span> card</div>
+                <div class="graph-legend-item"><span class="graph-legend-dot" style="background: #22c55e;"></span> merchant</div>
+                <div class="graph-legend-item"><span class="graph-legend-dot" style="background: #ef4444;"></span> email</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

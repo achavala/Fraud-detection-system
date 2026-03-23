@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Threshold Optimization — Fraud Detection Platform{% endblock %}
+
+{% block extra_style %}
+<style>
+    .optimal-card {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(34, 197, 94, 0.15));
+        border: 1px solid var(--accent);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        margin-bottom: 24px;
+    }
+    .optimal-card .kpi-value { font-size: 2rem; color: var(--accent); }
+    .row-optimal { background: rgba(59, 130, 246, 0.12) !important; }
+    .row-optimal td { border-color: var(--accent) !important; }
+    .chart-container { padding: 16px 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">Threshold Optimization</div>
+<div class="page-subtitle">Find the loss-optimal decision threshold</div>
+
+{% set results = threshold_results|default([]) %}
+{% set optimal = optimal_threshold|default(none) %}
+
+<!-- Optimal Threshold Card -->
+{% if optimal is not none and results %}
+{% for r in results %}
+{% if (r.threshold|default(-999)|float - optimal|float)|abs < 0.0001 %}
+<div class="optimal-card">
+    <div class="kpi-grid" style="margin-bottom: 0;">
+        <div class="kpi-card" style="border: none;">
+            <div class="kpi-label">Recommended Threshold</div>
+            <div class="kpi-value">{{ "%.3f"|format(optimal) }}</div>
+        </div>
+        <div class="kpi-card" style="border: none;">
+            <div class="kpi-label">Approval Rate</div>
+            <div class="kpi-value">{{ "%.1f"|format((r.approval_rate|default(0)|float) * 100) }}%</div>
+        </div>
+        <div class="kpi-card" style="border: none;">
+            <div class="kpi-label">Net Savings</div>
+            <div class="kpi-value" style="color: {{ 'var(--green)' if (r.net_savings|default(0)|float) >= 0 else 'var(--red)' }};">${{ "{:,.0f}".format(r.net_savings|default(0)|float) }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+{% elif optimal is not none %}
+<div class="optimal-card">
+    <div class="kpi-label">Recommended Threshold</div>
+    <div class="kpi-value">{{ "%.3f"|format(optimal) }}</div>
+</div>
+{% endif %}
+
+<!-- Threshold Sweep Table -->
+<div class="panel">
+    <div class="panel-header">Threshold Sweep Results</div>
+    <div class="panel-body">
+        {% if results %}
+        <div class="table-wrap" style="border: none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Threshold</th>
+                        <th>Approval Rate</th>
+                        <th>Decline Rate</th>
+                        <th>FP Rate</th>
+                        <th>Missed Fraud Rate</th>
+                        <th>Net Savings</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in results %}
+                    {% set r_thresh = r.threshold|default(None)|float %}
+                    {% set is_opt = optimal is not none and (r_thresh - optimal)|abs < 0.0001 %}
+                    <tr class="{{ 'row-optimal' if is_opt else '' }}">
+                        <td style="font-weight: 600;">{{ "%.3f"|format(r_thresh) }}</td>
+                        <td>{{ "%.1f"|format((r.approval_rate|default(0)|float) * 100) }}%</td>
+                        <td>{{ "%.1f"|format((r.decline_rate|default(0)|float) * 100) }}%</td>
+                        <td>{{ "%.1f"|format((r.false_positive_rate|default(0)|float) * 100) }}%</td>
+                        <td>{{ "%.1f"|format((r.missed_fraud_rate|default(0)|float) * 100) }}%</td>
+                        <td style="color: {{ 'var(--green)' if (r.net_savings|default(0)|float) >= 0 else 'var(--red)' }};">${{ "{:,.0f}".format(r.net_savings|default(0)|float) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">&#8709;</div>
+            <div class="empty-state-text">No threshold sweep results. Run optimization to see data.</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Threshold vs Net Savings Chart -->
+{% if results %}
+{% set ns = namespace(max_abs=1) %}
+{% for r in results %}
+{% set s = r.net_savings|default(0)|float %}
+{% if s|abs > ns.max_abs %}{% set ns.max_abs = s|abs %}{% endif %}
+{% endfor %}
+{% set chart_h = 200 %}
+{% set chart_w = 300 %}
+{% set n = results|length %}
+{% set bar_width = ((chart_w / n) * 0.7)|int %}
+<div class="panel">
+    <div class="panel-header">Threshold vs Net Savings</div>
+    <div class="panel-body chart-container">
+        <svg width="{{ chart_w }}" height="{{ chart_h }}" viewBox="0 0 {{ chart_w }} {{ chart_h }}" xmlns="http://www.w3.org/2000/svg">
+            <line x1="0" y1="{{ chart_h // 2 }}" x2="{{ chart_w }}" y2="{{ chart_h // 2 }}" stroke="var(--border)" stroke-width="1" stroke-dasharray="4"/>
+            {% for r in results %}
+            {% set savings_val = r.net_savings|default(0)|float %}
+            {% set x = loop.index0 * (chart_w / n) + (chart_w / n - bar_width) / 2 %}
+            {% set half_h = (chart_h / 2)|int %}
+            {% if ns.max_abs > 0 %}
+                {% set bar_h = ((savings_val|abs / ns.max_abs) * (chart_h * 0.45))|int %}
+            {% else %}
+                {% set bar_h = 0 %}
+            {% endif %}
+            {% if savings_val >= 0 %}
+            <rect x="{{ x }}" y="{{ half_h - bar_h }}" width="{{ bar_width }}" height="{{ bar_h }}"
+                  fill="var(--green)" rx="2"/>
+            {% else %}
+            <rect x="{{ x }}" y="{{ half_h }}" width="{{ bar_width }}" height="{{ bar_h }}"
+                  fill="var(--red)" rx="2"/>
+            {% endif %}
+            {% endfor %}
+        </svg>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
