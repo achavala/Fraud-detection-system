@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.auth import require_role
 from src.core.database import get_db
 from src.services.economics.service import FraudEconomicsService
 
@@ -47,6 +48,7 @@ async def economics_by_segment(
 async def threshold_sweep(
     request: ThresholdRequest,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk")),
 ):
     svc = FraudEconomicsService(db)
     return await svc.compute_threshold_economics(

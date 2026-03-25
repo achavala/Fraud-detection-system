@@ -67,11 +67,10 @@ def test_card_testing_detection_rate(scorer):
     Target: >80% with heuristic. Reports blind spot rate when below target.
     """
     sim = FraudSimulator(n_customers=2000, n_merchants=500, n_devices=1000)
-    df = sim.generate(n_transactions=5000, fraud_rate=0.03, seed=42)
+    df = sim.generate(n_transactions=10000, fraud_rate=0.05, seed=42)
 
     card_testing = df[df["fraud_type"] == "card_testing"]
-    if len(card_testing) == 0:
-        pytest.skip("No card_testing transactions generated")
+    assert len(card_testing) > 0, "Simulator must produce card_testing at n=10k, rate=5%"
 
     probs = _score_transactions(card_testing, scorer)
     flagged = np.sum(probs > 0.35)
@@ -92,11 +91,10 @@ def test_ato_detection_rate(scorer):
     Heuristic lacks geo_distance feature; baseline ~10%. Reports weak features.
     """
     sim = FraudSimulator(n_customers=2000, n_merchants=500, n_devices=1000)
-    df = sim.generate(n_transactions=5000, fraud_rate=0.03, seed=42)
+    df = sim.generate(n_transactions=10000, fraud_rate=0.05, seed=42)
 
     ato = df[df["fraud_type"] == "ato"]
-    if len(ato) == 0:
-        pytest.skip("No ATO transactions generated")
+    assert len(ato) > 0, "Simulator must produce ATO at n=10k, rate=5%"
 
     probs = _score_transactions(ato, scorer)
     flagged = np.sum(probs > 0.35)
@@ -132,11 +130,10 @@ def test_friendly_fraud_blind_spot(scorer):
     Document as known limitation: detection rate < 50%.
     """
     sim = FraudSimulator(n_customers=2000, n_merchants=500, n_devices=1000)
-    df = sim.generate(n_transactions=5000, fraud_rate=0.03, seed=42)
+    df = sim.generate(n_transactions=10000, fraud_rate=0.05, seed=42)
 
     friendly = df[df["fraud_type"] == "friendly_fraud"]
-    if len(friendly) == 0:
-        pytest.skip("No friendly_fraud transactions generated")
+    assert len(friendly) > 0, "Simulator must produce friendly_fraud at n=10k, rate=5%"
 
     probs = _score_transactions(friendly, scorer)
     flagged = np.sum(probs > 0.35)
@@ -152,11 +149,10 @@ def test_friendly_fraud_blind_spot(scorer):
 def test_fraud_ring_detection_via_graph_features():
     """Fraud ring transactions should have elevated graph_cluster_risk_score."""
     sim = FraudSimulator(n_customers=2000, n_merchants=500, n_devices=1000)
-    df = sim.generate(n_transactions=5000, fraud_rate=0.03, seed=42)
+    df = sim.generate(n_transactions=10000, fraud_rate=0.05, seed=42)
 
     ring = df[df["fraud_type"] == "fraud_ring"]
-    if len(ring) == 0:
-        pytest.skip("No fraud_ring transactions generated")
+    assert len(ring) > 0, "Simulator must produce fraud_ring at n=10k, rate=5%"
 
     graph_scores = ring["graph_cluster_risk_score"].values
     above_threshold = np.sum(graph_scores > 0.3)
@@ -171,7 +167,7 @@ def test_fraud_ring_detection_via_graph_features():
 def test_threshold_brittleness_under_drift(scorer):
     """Score distribution should shift under drift; report threshold stability."""
     sim = FraudSimulator(n_customers=2000, n_merchants=500, n_devices=1000)
-    df = sim.generate(n_transactions=5000, fraud_rate=0.03, seed=42)
+    df = sim.generate(n_transactions=10000, fraud_rate=0.05, seed=42)
     drifted = FraudSimulator.generate_temporal_drift(
         df, drift_factor=2.0, drift_start_pct=0.7
     )
@@ -242,13 +238,13 @@ def test_amount_boundary_detection(scorer):
 def test_synthetic_identity_feature_separation():
     """Key features should separate synthetic_identity from normal (KS > 0.3)."""
     sim = FraudSimulator(n_customers=2000, n_merchants=500, n_devices=1000)
-    df = sim.generate(n_transactions=5000, fraud_rate=0.03, seed=42)
+    df = sim.generate(n_transactions=10000, fraud_rate=0.05, seed=42)
 
     synth = df[df["fraud_type"] == "synthetic_identity"]
     normal = df[df["fraud_type"] == "normal"]
 
-    if len(synth) < 10 or len(normal) < 10:
-        pytest.skip("Insufficient synthetic_identity or normal transactions")
+    assert len(synth) >= 10, "Simulator must produce >=10 synthetic_identity at n=10k, rate=5%"
+    assert len(normal) >= 10, "Simulator must produce >=10 normal at n=10k, rate=5%"
 
     key_features = ["device_account_count_30d", "ip_account_count_7d"]
     for feat in key_features:

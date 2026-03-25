@@ -7,6 +7,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.auth import require_role
 from src.core.database import get_db
 from src.services.governance.service import ModelGovernanceService
 from src.schemas.governance import (
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/model", tags=["model governance"])
 async def register_model(
     entry: ModelRegistryEntry,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk")),
 ):
     service = ModelGovernanceService(db)
     model = await service.register_model(
@@ -46,6 +48,7 @@ async def promote_model(
     approved_by: str,
     reason: str,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin")),
 ):
     """Approval-gated model promotion — requires explicit sign-off."""
     service = ModelGovernanceService(db)
@@ -60,6 +63,7 @@ async def promote_model(
 async def evaluate_model(
     request: ModelEvalRequest,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk")),
 ):
     service = ModelGovernanceService(db)
     result = await service.evaluate_model(
@@ -81,6 +85,7 @@ async def evaluate_model(
 async def create_experiment(
     request: ExperimentCreate,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk")),
 ):
     service = ModelGovernanceService(db)
     exp = await service.create_experiment(

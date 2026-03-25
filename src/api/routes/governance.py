@@ -8,6 +8,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.auth import require_role
 from src.core.database import get_db
 from src.contracts.data_contracts import ContractRegistry
 from src.services.governance.model_card import ModelCardService
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/governance", tags=["governance"])
 async def get_model_card(
     model_version: str,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk", "readonly")),
 ):
     """Model card for specific version."""
     service = ModelCardService(db)

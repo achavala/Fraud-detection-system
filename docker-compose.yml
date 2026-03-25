@@ -47,14 +47,15 @@ services:
       dockerfile: docker/Dockerfile
     ports:
       - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://fraud_user:fraud_pass@postgres:5432/fraud_db
-      - DATABASE_URL_SYNC=postgresql://fraud_user:fraud_pass@postgres:5432/fraud_db
-      - REDIS_URL=redis://redis:6379/0
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - APP_ENV=production
-      - DEBUG=false
+    environment: &app-env
+      DATABASE_URL: postgresql+asyncpg://fraud_user:fraud_pass@postgres:5432/fraud_db
+      DATABASE_URL_SYNC: postgresql://fraud_user:fraud_pass@postgres:5432/fraud_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      APP_ENV: production
+      DEBUG: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,6 +70,53 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: >
+      celery -A src.workers.celery_app worker
+      --loglevel=info
+      --concurrency=4
+      -Q features,labels,governance,experiments,celery
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: >
+      celery -A src.workers.celery_app beat
+      --loglevel=info
+      --schedule=/tmp/celerybeat-schedule
+    environment:
+      <<: *app-env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+    restart: unless-stopped
+
+  flower:
+    image: mher/flower:2.0
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:

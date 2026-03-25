@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.auth import require_role
 from src.core.database import get_db
 from src.models.investigation import FactFraudCase, FactCaseAction
 from src.models.audit import AuditEvent
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/case", tags=["cases"])
 async def create_case(
     request: FraudCaseCreate,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "investigator")),
 ):
     case = FactFraudCase(
         auth_event_id=request.auth_event_id,
@@ -62,6 +64,7 @@ async def create_case(
 async def review_case(
     request: CaseReviewRequest,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "investigator")),
 ):
     result = await db.execute(
         select(FactFraudCase).where(FactFraudCase.case_id == request.case_id)
@@ -103,6 +106,7 @@ async def review_case(
 async def investigate_case(
     case_id: int,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "investigator")),
 ):
     """AI-assisted case investigation with full agent trace."""
     copilot = InvestigatorCopilot(db)
@@ -113,6 +117,7 @@ async def investigate_case(
 async def recommend_action(
     case_id: int,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "investigator")),
 ):
     copilot = InvestigatorCopilot(db)
     return await copilot.recommend_action(case_id)

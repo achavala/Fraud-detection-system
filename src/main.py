@@ -21,6 +21,7 @@ from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.core.config import get_settings
 from src.core.database import init_db, shutdown_db
 from src.core.logging import setup_logging
+from src.services.observability.telemetry import setup_telemetry
 from src.api.routes import authorize, cases, features, graph, feedback, model, dashboard, ui, replay, economics, governance, observability
 
 
@@ -28,6 +29,7 @@ from src.api.routes import authorize, cases, features, graph, feedback, model, d
 async def lifespan(app: FastAPI):
     setup_logging()
     await init_db()
+    setup_telemetry(app)
     yield
     await shutdown_db()
 
@@ -41,7 +43,7 @@ app = FastAPI(
         "graph intelligence, investigator copilot, model governance, "
         "and immutable auditability."
     ),
-    version="1.0.0",
+    version="2.0.0",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
@@ -75,7 +77,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "fraud-detection-platform",
-        "version": "1.0.0",
+        "version": "2.0.0",
     }
 
 
@@ -83,7 +85,7 @@ async def health_check():
 async def root():
     return {
         "service": "Fraud Detection Platform",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "endpoints": {
             "ui": "/ui/",
             "scoring": "/authorize/score",

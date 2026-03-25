@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find '/Users/chavala/Fraud Detection system/.github' -type f -name *)",
+      "Bash(find src:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python3 generate_technical_doc.py)"
+    ]
+  }
+}

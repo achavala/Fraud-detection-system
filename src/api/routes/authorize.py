@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.auth import require_role
 from src.core.database import get_db
 from src.schemas.transactions import AuthorizationRequest, AuthorizationResponse
 from src.services.scoring.service import ScoringService
@@ -17,6 +18,7 @@ router = APIRouter(prefix="/authorize", tags=["authorization"])
 async def score_authorization(
     request: AuthorizationRequest,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk")),
 ):
     """
     Real-time fraud scoring endpoint.

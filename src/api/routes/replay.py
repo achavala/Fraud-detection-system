@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.auth import require_role
 from src.core.database import get_db
 from src.services.features.parity import FeatureParityValidator
 from src.services.replay.service import DecisionReplayService
@@ -32,6 +33,7 @@ replay_router = APIRouter(prefix="/replay", tags=["replay"])
 async def replay_decision(
     auth_event_id: int,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk", "investigator")),
 ):
     """Full decision replay — reconstruct exact decision as-of transaction time."""
     service = DecisionReplayService(db)
@@ -45,6 +47,7 @@ async def replay_decision(
 async def compare_replay(
     request: CompareReplayRequest,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk")),
 ):
     """What-if comparison: re-score with different model/thresholds, compare to actual."""
     service = DecisionReplayService(db)
@@ -62,6 +65,7 @@ async def compare_replay(
 async def batch_replay(
     request: BatchReplayRequest,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk")),
 ):
     """Batch replay for backtesting — replay many decisions with specified model."""
     service = DecisionReplayService(db)

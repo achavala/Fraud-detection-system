@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.auth import require_role
 from src.core.database import get_db
 from src.services.ingestion.service import IngestionService
 from src.schemas.labels import FraudLabelCreate, ChargebackCreate, LabelSnapshotRequest
@@ -17,6 +18,7 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 async def submit_fraud_label(
     request: FraudLabelCreate,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "investigator")),
 ):
     """Submit a fraud label — delayed truth from any source."""
     service = IngestionService(db)
@@ -44,6 +46,7 @@ async def submit_fraud_label(
 async def submit_chargeback(
     request: ChargebackCreate,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "investigator")),
 ):
     """Ingest a chargeback event."""
     service = IngestionService(db)

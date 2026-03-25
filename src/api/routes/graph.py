@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.middleware.auth import require_role
 from src.core.database import get_db
 from src.services.graph.service import FraudGraphService
 from src.schemas.graph import GraphRiskRequest, GraphNodeCreate, GraphEdgeCreate
@@ -17,6 +18,7 @@ router = APIRouter(prefix="/graph", tags=["graph"])
 async def compute_graph_risk(
     request: GraphRiskRequest,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin", "model_risk", "investigator")),
 ):
     """Compute fraud graph risk for an authorization."""
     service = FraudGraphService(db)
@@ -63,6 +65,7 @@ async def expand_cluster(
 async def add_node(
     request: GraphNodeCreate,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin")),
 ):
     service = FraudGraphService(db)
     await service._upsert_node(
@@ -77,6 +80,7 @@ async def add_node(
 async def add_edge(
     request: GraphEdgeCreate,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(require_role("admin")),
 ):
     service = FraudGraphService(db)
     await service._upsert_edge(
