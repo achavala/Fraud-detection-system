@@ -1,0 +1,36 @@
+{
+  "serviceName": "fraud-detection-api",
+  "cluster": "fraud-detection-cluster",
+  "taskDefinition": "fraud-detection-api",
+  "desiredCount": 3,
+  "launchType": "FARGATE",
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": ["subnet-REPLACE_PRIVATE_1", "subnet-REPLACE_PRIVATE_2"],
+      "securityGroups": ["sg-REPLACE_API"],
+      "assignPublicIp": "DISABLED"
+    }
+  },
+  "loadBalancers": [
+    {
+      "targetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:ACCOUNT_ID:targetgroup/fraud-api/REPLACE",
+      "containerName": "fraud-api",
+      "containerPort": 8000
+    }
+  ],
+  "deploymentConfiguration": {
+    "maximumPercent": 200,
+    "minimumHealthyPercent": 100,
+    "deploymentCircuitBreaker": {
+      "enable": true,
+      "rollback": true
+    }
+  },
+  "healthCheckGracePeriodSeconds": 60,
+  "enableExecuteCommand": true,
+  "serviceRegistries": [
+    {
+      "registryArn": "arn:aws:servicediscovery:us-east-1:ACCOUNT_ID:service/REPLACE"
+    }
+  ]
+}

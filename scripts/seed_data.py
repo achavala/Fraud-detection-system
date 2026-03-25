@@ -1,19 +1,20 @@
 """
 Seed script — populates the fraud platform with realistic demo data
 for all dimensions, transactions, scores, decisions, labels, and graph.
+
+Schema is managed by Alembic / init_schema.sql — this script only inserts rows.
 """
 import asyncio
 import random
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
-from src.core.database import get_engine, get_session_factory, init_db
+from src.core.database import get_engine, get_session_factory
 from src.models.dimensions import DimCustomer, DimAccount, DimCard, DimMerchant, DimDevice, DimIP
 from src.models.scoring import DimModelRegistry
 
 
 async def seed():
-    await init_db()
     factory = get_session_factory()
 
     async with factory() as db:

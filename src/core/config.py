@@ -55,7 +55,17 @@ class Settings(BaseSettings):
     rate_limit_scoring_rps: int = 5000
     rate_limit_dashboard_rps: int = 100
 
+    cors_allowed_origins: str = "http://localhost:3000,http://localhost:8000"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse comma-separated CORS origins into a list."""
+        raw = self.cors_allowed_origins.strip()
+        if raw == "*":
+            return ["*"]
+        return [o.strip() for o in raw.split(",") if o.strip()]
 
 
 @lru_cache

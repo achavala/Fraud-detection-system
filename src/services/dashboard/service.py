@@ -67,10 +67,13 @@ class DashboardService:
         end_time: Optional[datetime] = None,
         limit: int = 50,
         offset: int = 0,
+        after_id: Optional[int] = None,
     ) -> dict:
         query = select(FactAuthorizationEvent)
         conditions = []
 
+        if after_id is not None:
+            conditions.append(FactAuthorizationEvent.auth_event_id < after_id)
         if customer_id:
             conditions.append(FactAuthorizationEvent.customer_id == customer_id)
         if merchant_id:
@@ -95,7 +98,7 @@ class DashboardService:
         count_result = await self.db.execute(count_q)
         total = count_result.scalar()
 
-        query = query.order_by(desc(FactAuthorizationEvent.event_time)).offset(offset).limit(limit)
+        query = query.order_by(desc(FactAuthorizationEvent.auth_event_id)).offset(offset).limit(limit)
         result = await self.db.execute(query)
         transactions = result.scalars().all()
 
@@ -103,7 +106,7 @@ class DashboardService:
             "total": total,
             "offset": offset,
             "limit": limit,
-            "transactions": [self._serialize(t) for t in transactions],
+            "results": [self._serialize(t) for t in transactions],
         }
 
     async def get_case_queue(
@@ -111,10 +114,13 @@ class DashboardService:
         queue_name: Optional[str] = None,
         status: str = "open",
         limit: int = 50,
+        after_id: Optional[int] = None,
     ) -> dict:
         query = select(FactFraudCase).where(FactFraudCase.case_status == status)
         if queue_name:
             query = query.where(FactFraudCase.queue_name == queue_name)
+        if after_id is not None:
+            query = query.where(FactFraudCase.case_id > after_id)
 
         query = query.order_by(
             desc(FactFraudCase.priority == "critical"),
@@ -198,19 +204,23 @@ class DashboardService:
         entity_type: Optional[str] = None,
         entity_id: Optional[str] = None,
         limit: int = 100,
-    ) -> list[dict]:
+        after_id: Optional[int] = None,
+    ) -> dict:
         query = select(AuditEvent)
         conditions = []
         if entity_type:
             conditions.append(AuditEvent.entity_type == entity_type)
         if entity_id:
             conditions.append(AuditEvent.entity_id == entity_id)
+        if after_id is not None:
+            conditions.append(AuditEvent.event_id < after_id)
         if conditions:
             query = query.where(and_(*conditions))
 
         query = query.order_by(desc(AuditEvent.created_at)).limit(limit)
         result = await self.db.execute(query)
-        return [self._serialize(e) for e in result.scalars().all()]
+        events = [self._serialize(e) for e in result.scalars().all()]
+        return {"events": events, "count": len(events)}
 
     async def get_agent_traces(self, case_id: int) -> list[dict]:
         result = await self.db.execute(

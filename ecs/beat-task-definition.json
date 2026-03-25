@@ -1,0 +1,36 @@
+{
+  "family": "fraud-detection-beat",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/fraudPlatformTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "celery-beat",
+      "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-platform:latest",
+      "essential": true,
+      "command": [
+        "celery", "-A", "src.workers.celery_app", "beat",
+        "--loglevel=info", "--schedule=/tmp/celerybeat-schedule"
+      ],
+      "environment": [
+        { "name": "APP_ENV", "value": "production" },
+        { "name": "OTEL_SERVICE_NAME", "value": "fraud-detection-beat" }
+      ],
+      "secrets": [
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/REDIS_URL" },
+        { "name": "CELERY_BROKER_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/REDIS_URL" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/fraud-detection-beat",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "beat"
+        }
+      }
+    }
+  ]
+}

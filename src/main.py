@@ -21,8 +21,11 @@ from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.core.config import get_settings
 from src.core.database import init_db, shutdown_db
 from src.core.logging import setup_logging
+from src.core.secrets import inject_secrets
 from src.services.observability.telemetry import setup_telemetry
 from src.api.routes import authorize, cases, features, graph, feedback, model, dashboard, ui, replay, economics, governance, observability
+
+inject_secrets()
 
 
 @asynccontextmanager
@@ -50,7 +53,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

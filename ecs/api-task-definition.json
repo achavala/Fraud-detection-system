@@ -1,0 +1,53 @@
+{
+  "family": "fraud-detection-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/fraudPlatformTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "fraud-api",
+      "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-platform:latest",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8000, "protocol": "tcp" },
+        { "containerPort": 9464, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "APP_ENV", "value": "production" },
+        { "name": "DEBUG", "value": "false" },
+        { "name": "QDRANT_HOST", "value": "qdrant.fraud.internal" },
+        { "name": "QDRANT_PORT", "value": "6333" },
+        { "name": "OTEL_SERVICE_NAME", "value": "fraud-detection-api" },
+        { "name": "PROMETHEUS_PORT", "value": "9464" },
+        { "name": "CORS_ALLOWED_ORIGINS", "value": "https://dashboard.fraud.internal" }
+      ],
+      "secrets": [
+        { "name": "SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/SECRET_KEY" },
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/DATABASE_URL" },
+        { "name": "DATABASE_URL_SYNC", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/DATABASE_URL_SYNC" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/REDIS_URL" },
+        { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/OPENAI_API_KEY" },
+        { "name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/ANTHROPIC_API_KEY" },
+        { "name": "SLACK_BOT_TOKEN", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/SLACK_BOT_TOKEN" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 15,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 30
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/fraud-detection-api",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "api"
+        }
+      }
+    }
+  ]
+}

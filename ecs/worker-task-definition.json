@@ -1,0 +1,39 @@
+{
+  "family": "fraud-detection-worker",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/fraudPlatformTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "celery-worker",
+      "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-platform:latest",
+      "essential": true,
+      "command": [
+        "celery", "-A", "src.workers.celery_app", "worker",
+        "--loglevel=info", "--concurrency=4",
+        "-Q", "features,labels,governance,experiments,celery"
+      ],
+      "environment": [
+        { "name": "APP_ENV", "value": "production" },
+        { "name": "OTEL_SERVICE_NAME", "value": "fraud-detection-worker" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/DATABASE_URL" },
+        { "name": "DATABASE_URL_SYNC", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/DATABASE_URL_SYNC" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/REDIS_URL" },
+        { "name": "CELERY_BROKER_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:fraud-platform/REDIS_URL" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/fraud-detection-worker",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "worker"
+        }
+      }
+    }
+  ]
+}
