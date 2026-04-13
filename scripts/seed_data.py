@@ -9,6 +9,8 @@ import random
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
+from sqlalchemy import text
+
 from src.core.database import get_engine, get_session_factory
 from src.models.dimensions import DimCustomer, DimAccount, DimCard, DimMerchant, DimDevice, DimIP
 from src.models.scoring import DimModelRegistry
@@ -129,19 +131,23 @@ async def seed():
 
         ips = []
         for i in range(10):
-            ip = DimIP(
-                ip_address=f"{random.randint(1,223)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}",
-                geo_country_code=random.choice(["US", "GB", "NG", "RU", "BR"]),
-                geo_region=random.choice(["California", "London", "Lagos", "Moscow", "Sao Paulo"]),
-                geo_city=random.choice(["San Francisco", "London", "Lagos", "Moscow", "Sao Paulo"]),
-                asn=f"AS{random.randint(1000, 9999)}",
-                proxy_vpn_tor_flag=random.random() < 0.15,
-                hosting_provider_flag=random.random() < 0.1,
-                ip_risk_score=random.uniform(0, 0.8),
-            )
-            db.add(ip)
-            ips.append(ip)
-        await db.flush()
+            addr = f"{random.randint(1,223)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
+            await db.execute(text(
+                "INSERT INTO dim_ip (ip_address, geo_country_code, geo_region, geo_city, asn, "
+                "proxy_vpn_tor_flag, hosting_provider_flag, ip_risk_score) "
+                "VALUES (:ip, :cc, :region, :city, :asn, :vpn, :hosting, :risk) "
+                "ON CONFLICT DO NOTHING"
+            ), {
+                "ip": addr,
+                "cc": random.choice(["US", "GB", "NG", "RU", "BR"]),
+                "region": random.choice(["California", "London", "Lagos", "Moscow", "Sao Paulo"]),
+                "city": random.choice(["San Francisco", "London", "Lagos", "Moscow", "Sao Paulo"]),
+                "asn": f"AS{random.randint(1000, 9999)}",
+                "vpn": random.random() < 0.15,
+                "hosting": random.random() < 0.1,
+                "risk": round(random.uniform(0, 0.8), 4),
+            })
+            ips.append(addr)
 
         await db.commit()
         print(f"Seeded: {len(customers)} customers, {len(accounts)} accounts, "

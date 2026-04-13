@@ -7,8 +7,6 @@ Supports two pagination modes:
   preferred for large result sets. The cursor is the last ``auth_event_id``
   or ``case_id`` from the previous page (base64-encoded).
 """
-from __future__ import annotations
-
 import base64
 from datetime import datetime
 from typing import Optional

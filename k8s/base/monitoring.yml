@@ -1,0 +1,81 @@
+# Prometheus ServiceMonitor for auto-discovery by kube-prometheus-stack
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fraud-api-monitor
+  namespace: fraud-detection
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: fraud-api
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /
+---
+# PrometheusRule — alerts for fraud platform SLOs
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fraud-platform-alerts
+  namespace: fraud-detection
+  labels:
+    release: prometheus
+spec:
+  groups:
+    - name: fraud-platform.rules
+      rules:
+        - alert: FraudAPIHighLatency
+          expr: histogram_quantile(0.99, rate(fraud_scoring_latency_ms_bucket[5m])) > 500
+          for: 5m
+          labels:
+            severity: warning
+            team: fraud-engineering
+          annotations:
+            summary: "P99 scoring latency exceeds 500ms"
+            description: "P99 latency is {{ $value }}ms for the last 5 minutes."
+
+        - alert: FraudAPIErrorRate
+          expr: rate(http_server_duration_milliseconds_count{http_status_code=~"5.."}[5m]) / rate(http_server_duration_milliseconds_count[5m]) > 0.01
+          for: 5m
+          labels:
+            severity: critical
+            team: fraud-engineering
+          annotations:
+            summary: "API error rate exceeds 1%"
+
+        - alert: FraudAPIPodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total{namespace="fraud-detection"}[15m]) > 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.pod }} is crash-looping"
+
+        - alert: FraudModelFallbackHigh
+          expr: rate(fraud_model_fallbacks_total[5m]) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            team: fraud-ml
+          annotations:
+            summary: "High model fallback rate — heuristic scoring active"
+
+        - alert: FraudOpenCasesHigh
+          expr: fraud_cases_active > 500
+          for: 30m
+          labels:
+            severity: warning
+            team: fraud-ops
+          annotations:
+            summary: "Open fraud cases exceeds 500"
+
+        - alert: FraudRDSConnectionsHigh
+          expr: pg_stat_activity_count > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PostgreSQL connection count is high ({{ $value }})"

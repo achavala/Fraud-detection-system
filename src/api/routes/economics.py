@@ -1,8 +1,6 @@
 """
 /economics endpoints — fraud business decision metrics.
 """
-from __future__ import annotations
-
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query

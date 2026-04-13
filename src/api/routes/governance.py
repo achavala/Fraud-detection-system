@@ -1,8 +1,6 @@
 """
 /governance endpoints — model cards, contracts, and validation.
 """
-from __future__ import annotations
-
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException

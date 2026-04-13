@@ -1,8 +1,6 @@
 """
 /ops endpoints — observability and metrics dashboard.
 """
-from __future__ import annotations
-
 from fastapi import APIRouter, Depends
 
 from src.api.middleware.auth import require_role

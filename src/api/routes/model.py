@@ -1,8 +1,6 @@
 """
 /model endpoints — model governance, evaluation, drift, and experiments.
 """
-from __future__ import annotations
-
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

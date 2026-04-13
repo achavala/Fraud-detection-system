@@ -1,0 +1,56 @@
+# ==============================================================================
+# Fraud Detection Platform — Production Multi-Stage Dockerfile
+# Hardened, non-root, minimal attack surface
+# ==============================================================================
+
+# Stage 1: Build dependencies
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# Stage 2: Production runtime
+FROM python:3.12-slim AS runtime
+
+LABEL maintainer="fraud-engineering@yourcompany.com"
+LABEL org.opencontainers.image.title="Fraud Detection Platform"
+LABEL org.opencontainers.image.version="2.2.0"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system --gid 1000 appgroup \
+    && adduser --system --uid 1000 --gid 1000 --no-create-home appuser
+
+COPY --from=builder /install /usr/local
+
+WORKDIR /app
+
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY models_artifact/ ./models_artifact/
+COPY templates/ ./templates/
+COPY alembic.ini ./
+
+RUN chown -R appuser:appgroup /app
+
+USER appuser
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--loop", "uvloop", "--http", "httptools", "--access-log"]

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fraud-platform-config
+  namespace: fraud-detection
+data:
+  APP_ENV: "production"
+  DEBUG: "false"
+  QDRANT_HOST: "qdrant.fraud-detection.svc.cluster.local"
+  QDRANT_PORT: "6333"
+  FEATURE_VERSION: "v2.3.1"
+  CHAMPION_MODEL_VERSION: "xgb-v4.2.0"
+  SHADOW_MODEL_VERSIONS: "lgb-v5.0.0-rc1"
+  RATE_LIMIT_SCORING_RPS: "5000"
+  RATE_LIMIT_DASHBOARD_RPS: "100"
+  OTEL_SERVICE_NAME: "fraud-detection-platform"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4317"
+  PROMETHEUS_PORT: "9464"
+  CORS_ALLOWED_ORIGINS: "https://fraud-dashboard.yourcompany.com"
+  # AWS Secrets Manager ARN — triggers secret injection on startup
+  AWS_SECRETS_ARN: "${SECRETS_MANAGER_ARN}"

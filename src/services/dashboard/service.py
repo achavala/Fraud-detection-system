@@ -281,15 +281,19 @@ class DashboardService:
         )
 
         total_txn = txn_count.scalar() or 0
+        total_declines = decline_count.scalar() or 0
+        total_reviews = review_count.scalar() or 0
+        total_fraud = fraud_count.scalar() or 0
+        total_open = open_cases.scalar() or 0
         return {
             "period": "last_24h",
             "total_transactions": total_txn,
-            "total_declines": decline_count.scalar() or 0,
-            "total_reviews": review_count.scalar() or 0,
-            "confirmed_fraud": fraud_count.scalar() or 0,
-            "decline_rate": (decline_count.scalar() or 0) / max(total_txn, 1),
-            "review_rate": (review_count.scalar() or 0) / max(total_txn, 1),
-            "open_cases": open_cases.scalar() or 0,
+            "total_declines": total_declines,
+            "total_reviews": total_reviews,
+            "confirmed_fraud": total_fraud,
+            "decline_rate": total_declines / max(total_txn, 1),
+            "review_rate": total_reviews / max(total_txn, 1),
+            "open_cases": total_open,
         }
 
     async def _get_one(self, model, condition):

@@ -1,0 +1,342 @@
+# ==============================================================================
+# CI/CD Pipeline — Build, Test, Push to ECR, Deploy to Shared EKS Cluster
+#
+# Deploys fraud-detection to the `fraud-detection` namespace on the shared
+# TradeNova EKS cluster. Uses dedicated ON_DEMAND node group with taints.
+# ==============================================================================
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER: tradenova
+  ECR_REPOSITORY: fraud-detection-platform
+  K8S_NAMESPACE: fraud-detection
+  K8S_MANIFESTS_DIR: k8s/base
+
+jobs:
+  # ============================================================================
+  # 1. Lint and Type Check
+  # ============================================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check src/ tests/ scripts/
+      - run: ruff format --check src/ tests/ scripts/
+
+  # ============================================================================
+  # 2. Unit + Integration Tests
+  # ============================================================================
+  test:
+    name: Test
+    needs: lint
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fraud_user
+          POSTGRES_PASSWORD: fraud_pass
+          POSTGRES_DB: fraud_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://fraud_user:fraud_pass@localhost:5432/fraud_db
+          DATABASE_URL_SYNC: postgresql://fraud_user:fraud_pass@localhost:5432/fraud_db
+          REDIS_URL: redis://localhost:6379/0
+          APP_ENV: test
+          SECRET_KEY: test-secret-key-ci
+        run: |
+          pytest tests/unit tests/integration tests/routes tests/evaluation \
+            -m "not slow" \
+            --junitxml=reports/junit.xml \
+            --cov=src --cov-report=xml:reports/coverage.xml \
+            -v
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: reports/
+
+  # ============================================================================
+  # 3. Security Scan
+  # ============================================================================
+  security:
+    name: Security Scan
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+
+  # ============================================================================
+  # 4. Build and Push to ECR
+  # ============================================================================
+  build:
+    name: Build & Push
+    needs: [test, security]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+      ecr_image: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy on image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+  # ============================================================================
+  # 5. Deploy to EKS (shared cluster, fraud-detection namespace)
+  # ============================================================================
+  deploy:
+    name: Deploy to EKS
+    needs: build
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-fraud-detection
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Set deployment variables
+        id: vars
+        run: |
+          IMAGE_TAG="${{ needs.build.outputs.image_tag || github.sha }}"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "FRAUD_ECR_REPOSITORY_URL=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}" >> $GITHUB_OUTPUT
+
+      - name: Verify fraud-detection nodes are available
+        run: |
+          NODE_COUNT=$(kubectl get nodes -l workload=fraud-detection --no-headers 2>/dev/null | wc -l)
+          if [ "$NODE_COUNT" -lt 1 ]; then
+            echo "ERROR: No fraud-detection nodes available in the cluster"
+            echo "Ensure the 'fraud' node group is provisioned and healthy"
+            exit 1
+          fi
+          echo "Found $NODE_COUNT fraud-detection nodes"
+
+      - name: Run database migrations
+        run: |
+          export FRAUD_ECR_REPOSITORY_URL="${{ steps.vars.outputs.FRAUD_ECR_REPOSITORY_URL }}"
+          export FRAUD_IMAGE_TAG="${{ steps.vars.outputs.IMAGE_TAG }}"
+          export SECRETS_MANAGER_ARN="${{ secrets.FRAUD_SECRETS_ARN }}"
+          export FRAUD_API_POD_ROLE_ARN="${{ secrets.FRAUD_API_POD_ROLE_ARN }}"
+          export FRAUD_WORKER_POD_ROLE_ARN="${{ secrets.FRAUD_WORKER_POD_ROLE_ARN }}"
+          export FRAUD_EXTERNAL_SECRETS_ROLE_ARN="${{ secrets.FRAUD_EXTERNAL_SECRETS_ROLE_ARN }}"
+
+          # Apply namespace + service accounts first (migration job needs the SA)
+          envsubst < ${{ env.K8S_MANIFESTS_DIR }}/namespace.yml | kubectl apply -f -
+          envsubst < ${{ env.K8S_MANIFESTS_DIR }}/service-accounts.yml | kubectl apply -f -
+          envsubst < ${{ env.K8S_MANIFESTS_DIR }}/external-secrets.yml | kubectl apply -f -
+          envsubst < ${{ env.K8S_MANIFESTS_DIR }}/configmap.yml | kubectl apply -f -
+
+          # Wait for ExternalSecret to sync
+          echo "Waiting for secrets to sync..."
+          for i in {1..30}; do
+            if kubectl get secret fraud-platform-secrets -n ${{ env.K8S_NAMESPACE }} >/dev/null 2>&1; then
+              echo "Secrets synced"
+              break
+            fi
+            sleep 5
+          done
+
+          # Run migration as ephemeral Job
+          kubectl delete job -l app=fraud-migration -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
+          envsubst < ${{ env.K8S_MANIFESTS_DIR }}/migration-job.yml | kubectl apply -f - 2>/dev/null || \
+          kubectl run fraud-migration-${{ github.sha }} \
+            --namespace=${{ env.K8S_NAMESPACE }} \
+            --image=${{ steps.vars.outputs.FRAUD_ECR_REPOSITORY_URL }}:${{ steps.vars.outputs.IMAGE_TAG }} \
+            --restart=Never \
+            --rm --wait --timeout=300s \
+            --overrides='{"spec":{"serviceAccountName":"fraud-api-sa","nodeSelector":{"workload":"fraud-detection"},"tolerations":[{"key":"workload","operator":"Equal","value":"fraud-detection","effect":"NoSchedule"}]}}' \
+            -- alembic upgrade head
+
+      - name: Deploy all manifests
+        run: |
+          export FRAUD_ECR_REPOSITORY_URL="${{ steps.vars.outputs.FRAUD_ECR_REPOSITORY_URL }}"
+          export FRAUD_IMAGE_TAG="${{ steps.vars.outputs.IMAGE_TAG }}"
+          export SECRETS_MANAGER_ARN="${{ secrets.FRAUD_SECRETS_ARN }}"
+          export FRAUD_API_POD_ROLE_ARN="${{ secrets.FRAUD_API_POD_ROLE_ARN }}"
+          export FRAUD_WORKER_POD_ROLE_ARN="${{ secrets.FRAUD_WORKER_POD_ROLE_ARN }}"
+          export FRAUD_EXTERNAL_SECRETS_ROLE_ARN="${{ secrets.FRAUD_EXTERNAL_SECRETS_ROLE_ARN }}"
+          export FRAUD_ACM_CERTIFICATE_ARN="${{ secrets.FRAUD_ACM_CERTIFICATE_ARN }}"
+          export FRAUD_WAF_ACL_ARN="${{ secrets.FRAUD_WAF_ACL_ARN }}"
+          export FRAUD_DOMAIN_NAME="${{ secrets.FRAUD_DOMAIN_NAME }}"
+
+          for f in ${{ env.K8S_MANIFESTS_DIR }}/*.yml; do
+            echo "Applying $(basename "$f")..."
+            envsubst < "$f" | kubectl apply -f -
+          done
+
+      - name: Verify rollout
+        run: |
+          echo "=== Waiting for fraud-api rollout ==="
+          kubectl rollout status deployment/fraud-api \
+            --namespace=${{ env.K8S_NAMESPACE }} \
+            --timeout=300s
+
+          echo "=== Waiting for celery-worker rollout ==="
+          kubectl rollout status deployment/celery-worker \
+            --namespace=${{ env.K8S_NAMESPACE }} \
+            --timeout=300s
+
+          echo "=== Waiting for celery-beat rollout ==="
+          kubectl rollout status deployment/celery-beat \
+            --namespace=${{ env.K8S_NAMESPACE }} \
+            --timeout=120s
+
+      - name: Smoke test
+        run: |
+          # Try in-cluster health check first
+          kubectl run smoke-test-${{ github.sha }} \
+            --namespace=${{ env.K8S_NAMESPACE }} \
+            --image=curlimages/curl:latest \
+            --restart=Never \
+            --rm --wait --timeout=60s \
+            -- curl -sf http://fraud-api.${{ env.K8S_NAMESPACE }}.svc.cluster.local/health
+
+          echo "In-cluster health check passed"
+
+          # Try external ingress check
+          API_URL=$(kubectl get ingress fraud-api-ingress \
+            --namespace=${{ env.K8S_NAMESPACE }} \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+
+          if [ -n "$API_URL" ]; then
+            for i in {1..30}; do
+              if curl -sf "https://${API_URL}/health" | grep -q healthy; then
+                echo "External health check passed"
+                exit 0
+              fi
+              sleep 10
+            done
+            echo "WARNING: External health check timed out (ALB may still be provisioning)"
+          fi
+
+      - name: Print deployment status
+        if: always()
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -n ${{ env.K8S_NAMESPACE }} -o wide
+          echo ""
+          echo "=== Services ==="
+          kubectl get svc -n ${{ env.K8S_NAMESPACE }}
+          echo ""
+          echo "=== Ingress ==="
+          kubectl get ingress -n ${{ env.K8S_NAMESPACE }}
+          echo ""
+          echo "=== HPA ==="
+          kubectl get hpa -n ${{ env.K8S_NAMESPACE }}
+          echo ""
+          echo "=== Recent Events ==="
+          kubectl get events -n ${{ env.K8S_NAMESPACE }} --sort-by='.lastTimestamp' | tail -20
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed — initiating rollback"
+          kubectl rollout undo deployment/fraud-api --namespace=${{ env.K8S_NAMESPACE }} || true
+          kubectl rollout undo deployment/celery-worker --namespace=${{ env.K8S_NAMESPACE }} || true
+          kubectl rollout undo deployment/celery-beat --namespace=${{ env.K8S_NAMESPACE }} || true
+          echo "Rollback complete"

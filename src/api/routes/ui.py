@@ -3,8 +3,6 @@
 Read-only views backed by DashboardService, FraudEconomicsService,
 DecisionReplayService, and FraudGraphService.
 """
-from __future__ import annotations
-
 import pathlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional

@@ -1,8 +1,6 @@
 """
 /features endpoints — feature retrieval and offline feature generation.
 """
-from __future__ import annotations
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
